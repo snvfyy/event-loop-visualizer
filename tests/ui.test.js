@@ -1,24 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyEvent, createInitialState, pathsMatch, escapeBlessed } from '../src/ui.js';
-
-describe('escapeBlessed', () => {
-  it('returns the string unchanged when no braces are present', () => {
-    expect(escapeBlessed('hello world')).toBe('hello world');
-  });
-
-  it('wraps strings containing { in escape tags', () => {
-    expect(escapeBlessed('obj = { a: 1 }')).toBe('{escape}obj = { a: 1 }{/escape}');
-  });
-
-  it('wraps strings containing } in escape tags', () => {
-    expect(escapeBlessed('end }')).toBe('{escape}end }{/escape}');
-  });
-
-  it('coerces non-string values', () => {
-    expect(escapeBlessed(42)).toBe('42');
-    expect(escapeBlessed(null)).toBe('null');
-  });
-});
+import { applyEvent, createInitialState, pathsMatch } from '../src/ui.mjs';
 
 describe('createInitialState', () => {
   it('returns a fresh state with empty queues', () => {
@@ -167,9 +148,9 @@ describe('applyEvent', () => {
     expect(state.callStack).toEqual([]);
   });
 
-  it('escapes braces in log values', () => {
+  it('preserves braces in log values without escaping', () => {
     const state = createInitialState();
     applyEvent(state, { type: 'LOG', value: '{ a: 1 }', ts: 1000 });
-    expect(state.console[0]).toContain('{escape}');
+    expect(state.console[0]).toContain('{ a: 1 }');
   });
 });

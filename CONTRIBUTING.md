@@ -123,7 +123,7 @@ Vitest requires ESM for its environment and setup APIs. These `.mjs` files use `
 ### Key Dependencies
 
 - **acorn / acorn-walk** — AST parsing for source code extraction
-- **blessed** — Terminal UI rendering
+- **ink / react / chalk** — Terminal UI rendering
 - **magic-string** — Source-map-preserving string manipulation (not listed as a dependency; provided by Vite at runtime, only used in `vite-plugin-elv.mjs`)
 
 ## Commit Messages

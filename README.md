@@ -235,7 +235,7 @@ The `new Promise(executor)` callback runs **synchronously** — only the `.then(
 2. **Global patching** — `setTimeout`, `setInterval`, `queueMicrotask`, `process.nextTick`, `Promise.prototype.then/catch`, and `console.*` are monkey-patched to emit events when callbacks are enqueued and executed.
 3. **async_hooks** — Node's `async_hooks` API tracks native `await` / `Promise` continuations that don't go through `.then()` directly.
 
-Events are collected into a JSON array, then replayed step-by-step in the blessed TUI.
+Events are collected into a JSON array, then replayed step-by-step in the ink TUI.
 
 > **Note:** `async_hooks` is stability 1 (experimental) in Node.js. Promise tracking behavior may differ slightly across Node 18, 20, and 22. `elv` is tested against Node 18+ and works best with Node 20 or 22.
 
