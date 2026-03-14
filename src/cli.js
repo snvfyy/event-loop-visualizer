@@ -478,10 +478,10 @@ function extractSourceFromEvents(events) {
  * @param {ElvEvent[]} events
  * @param {string | null} sourcePath
  * @param {string | null} focusFile
- * @returns {void}
+ * @returns {Promise<void>}
  */
-function launchTUI(events, sourcePath, focusFile) {
-  const { startTUI } = require('./ui');
+async function launchTUI(events, sourcePath, focusFile) {
+  const { startTUI } = await import('./ui.mjs');
   const effectiveSource = sourcePath || extractSourceFromEvents(events);
   const primaryPath = focusFile || (effectiveSource ? path.resolve(effectiveSource) : null);
   let source = null;
