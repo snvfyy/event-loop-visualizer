@@ -1,0 +1,59 @@
+{
+  "name": "event-loop-visualizer",
+  "version": "0.1.0",
+  "description": "Interactive JS Event Loop Visualizer for the terminal",
+  "author": "Snvfyy",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/snvfyy/js-loop-visualizer.git"
+  },
+  "homepage": "https://github.com/snvfyy/js-loop-visualizer#readme",
+  "bugs": {
+    "url": "https://github.com/snvfyy/js-loop-visualizer/issues"
+  },
+  "bin": {
+    "elv": "./bin/elv.js"
+  },
+  "main": "src/cli.js",
+  "exports": {
+    ".": "./src/cli.js",
+    "./jest-environment": "./src/jest-environment.js",
+    "./vitest-environment": "./src/vitest-environment.mjs",
+    "./vitest-setup": "./src/vitest-setup.mjs",
+    "./vite-plugin": "./src/vite-plugin-elv.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "examples/",
+    "LICENSE"
+  ],
+  "keywords": [
+    "event-loop",
+    "visualizer",
+    "async",
+    "promises",
+    "setTimeout",
+    "microtask",
+    "macrotask",
+    "tui",
+    "terminal"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "acorn": "^8.16.0",
+    "acorn-walk": "^8.3.5",
+    "blessed": "^0.1.81"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "vitest": "^4.1.0"
+  }
+}

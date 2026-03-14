@@ -1,0 +1,7 @@
+node_modules/
+*.log
+*.tgz
+.tmp/
+.DS_Store
+coverage/
+.elv-vitest.config.mjs
