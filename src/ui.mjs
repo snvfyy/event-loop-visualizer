@@ -14,6 +14,70 @@ const MAX_MEMORY_DISPLAY_LEN = 50;
 const SNAPSHOT_INTERVAL = 100;
 const PANEL_COUNT = 7;
 
+// Phase-based color themes
+const PHASE_COLORS = {
+  'Ready': { primary: 'gray', accent: 'white', dim: 'gray' },
+  'Synchronous': { primary: 'green', accent: 'greenBright', dim: 'gray' },
+  'Sync Complete': { primary: 'green', accent: 'greenBright', dim: 'gray' },
+  'Microtasks': { primary: 'cyan', accent: 'cyanBright', dim: 'gray' },
+  'Macrotasks': { primary: 'yellow', accent: 'yellowBright', dim: 'gray' },
+  'Complete': { primary: 'gray', accent: 'white', dim: 'gray' },
+};
+
+// JavaScript syntax highlighting keywords
+const JS_KEYWORDS = [
+  'async', 'await', 'function', 'const', 'let', 'var', 'return', 'if', 'else',
+  'for', 'while', 'do', 'switch', 'case', 'break', 'continue', 'try', 'catch',
+  'finally', 'throw', 'new', 'class', 'extends', 'import', 'export', 'default',
+  'from', 'of', 'in', 'typeof', 'instanceof', 'this', 'super', 'null', 'undefined',
+  'true', 'false', 'void', 'delete', 'yield', 'static', 'get', 'set',
+];
+
+const JS_BUILTINS = [
+  'Promise', 'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval',
+  'setImmediate', 'queueMicrotask', 'console', 'process', 'JSON', 'Math',
+  'Object', 'Array', 'String', 'Number', 'Boolean', 'Date', 'Error', 'Map', 'Set',
+  'WeakMap', 'WeakSet', 'Symbol', 'BigInt', 'Proxy', 'Reflect', 'Intl', 'fetch',
+];
+
+/**
+ * Apply syntax highlighting to a line of JavaScript code
+ * @param {string} line
+ * @returns {string}
+ */
+function highlightSyntax(line) {
+  if (!line) return line;
+  
+  let result = line;
+  
+  // Highlight strings (single and double quotes, backticks)
+  result = result.replace(/(["'`])(?:(?!\1)[^\\]|\\.)*?\1/g, match => chalk.yellow(match));
+  
+  // Highlight comments
+  result = result.replace(/(\/\/.*$)/gm, match => chalk.gray.italic(match));
+  result = result.replace(/(\/\*[\s\S]*?\*\/)/g, match => chalk.gray.italic(match));
+  
+  // Highlight numbers
+  result = result.replace(/\b(\d+\.?\d*)\b/g, match => chalk.magenta(match));
+  
+  // Highlight keywords
+  for (const kw of JS_KEYWORDS) {
+    const regex = new RegExp(`\\b(${kw})\\b`, 'g');
+    result = result.replace(regex, chalk.red(kw));
+  }
+  
+  // Highlight builtins
+  for (const builtin of JS_BUILTINS) {
+    const regex = new RegExp(`\\b(${builtin})\\b`, 'g');
+    result = result.replace(regex, chalk.cyan(builtin));
+  }
+  
+  // Highlight arrow functions
+  result = result.replace(/(=>)/g, chalk.red('=>'));
+  
+  return result;
+}
+
 const _realPathCache = new Map();
 /**
  * Compares two file paths, handling symlinks (e.g. macOS /tmp vs /private/tmp).
@@ -69,33 +133,33 @@ function applyEvent(state, event) {
       if (event.ts) { state.startTs = event.ts; state.prevTs = event.ts; }
       state.callStack.push('<script>' + (event.label ? ' ' + event.label : ''));
       state.phase = 'Synchronous';
-      state.log.push(ts + chalk.bold('\u25B6 Script execution started'));
+      state.log.push(ts + chalk.bgGreen.black.bold(' START ') + ' Script execution started');
       break;
 
     case 'SYNC_END':
       state.callStack = [];
       state.phase = 'Sync Complete';
-      state.log.push(ts + chalk.bold('--- Synchronous execution complete ---'));
+      state.log.push(ts + chalk.green('\u2500\u2500\u2500') + chalk.green.bold(' Synchronous phase complete ') + chalk.green('\u2500\u2500\u2500'));
       break;
 
     case 'LOG': {
       const val = event.value || '';
       state.console.push('> ' + val);
-      state.log.push(ts + '# ' + val + fileTag);
+      state.log.push(ts + chalk.gray('\u2502') + ' ' + chalk.white(val) + fileTag);
       break;
     }
 
     case 'ENQUEUE_MACRO': {
       const label = event.label || 'macrotask';
       state.macroQueue.push({ label, taskId: event.taskId });
-      state.log.push(ts + chalk.yellow('[T]') + ' \u2192 Macrotask Queue: ' + label + fileTag);
+      state.log.push(ts + chalk.bgYellow.black(' +T ') + ' ' + chalk.yellow('\u2192') + ' ' + label + fileTag);
       break;
     }
 
     case 'ENQUEUE_MICRO': {
       const label = event.label || 'microtask';
       state.microQueue.push({ label, taskId: event.taskId });
-      state.log.push(ts + chalk.cyan('[M]') + ' \u2192 Microtask Queue: ' + label + fileTag);
+      state.log.push(ts + chalk.bgCyan.black(' +M ') + ' ' + chalk.cyan('\u2192') + ' ' + label + fileTag);
       break;
     }
 
@@ -104,12 +168,13 @@ function applyEvent(state, event) {
       if (event.kind === 'micro') {
         state.microQueue = state.microQueue.filter(item => item.taskId !== event.taskId);
         state.phase = 'Microtasks';
+        state.log.push(ts + chalk.bgCyan.black(' \u25B6M ') + ' ' + chalk.cyanBright.bold(label) + fileTag);
       } else {
         state.macroQueue = state.macroQueue.filter(item => item.taskId !== event.taskId);
         state.phase = 'Macrotasks';
+        state.log.push(ts + chalk.bgYellow.black(' \u25B6T ') + ' ' + chalk.yellowBright.bold(label) + fileTag);
       }
       state.callStack.push(label);
-      state.log.push(ts + chalk.bold('\u25B6 ' + label) + fileTag);
       break;
     }
 
@@ -119,7 +184,7 @@ function applyEvent(state, event) {
 
     case 'ERROR': {
       const msg = event.value || 'Unknown error';
-      state.log.push(ts + chalk.red('ERROR: ' + msg));
+      state.log.push(ts + chalk.bgRed.white.bold(' ERROR ') + ' ' + chalk.red(msg));
       break;
     }
 
@@ -130,7 +195,7 @@ function applyEvent(state, event) {
         const truncatedValue = val.length > MAX_MEMORY_DISPLAY_LEN
           ? val.substring(0, MAX_MEMORY_DISPLAY_LEN - 3) + '...'
           : val;
-        state.log.push(ts + chalk.magenta(event.label) + ' = ' + truncatedValue + fileTag);
+        state.log.push(ts + chalk.bgMagenta.white(' VAR ') + ' ' + chalk.magentaBright(event.label) + ' = ' + chalk.white(truncatedValue) + fileTag);
       }
       break;
 
@@ -140,38 +205,39 @@ function applyEvent(state, event) {
       state.callStack = [];
       state.memory = new Map();
       state.phase = 'Synchronous';
-      const bar = '\u2500'.repeat(3);
       state.log.push('');
-      state.log.push(ts + chalk.bold.green(bar + ' \u25C9 ' + testName + ' ' + bar));
+      state.log.push(ts + chalk.bgGreen.black.bold(' TEST ') + ' ' + chalk.greenBright.bold(testName));
       break;
     }
 
     case 'TEST_END': {
       const testName = event.label || 'test';
       const passed = event.value === 'pass';
-      const icon = passed ? '\u2713' : '\u2717';
-      const colorFn = passed ? chalk.bold.green : chalk.bold.red;
-      state.log.push(ts + colorFn('  ' + icon + ' ' + testName + ' ' + (passed ? 'passed' : 'failed')));
+      if (passed) {
+        state.log.push(ts + chalk.bgGreen.black.bold(' PASS ') + ' ' + chalk.green(testName));
+      } else {
+        state.log.push(ts + chalk.bgRed.white.bold(' FAIL ') + ' ' + chalk.red(testName));
+      }
       state.currentTest = null;
       break;
     }
 
     case 'SYNC_STEP': {
       const label = event.label || '';
-      state.log.push('  ' + chalk.gray('\u00b7 ' + label));
+      state.log.push('       ' + chalk.gray('\u2502 ') + chalk.dim(label));
       break;
     }
 
     case 'EVENT_CAP_REACHED': {
       const cap = event.value || '5000';
-      state.log.push(ts + chalk.red.bold('\u26A0 Event cap reached (' + cap + '). Later events dropped. Set ELV_MAX_EVENTS for a higher limit.'));
+      state.log.push(ts + chalk.bgRed.white.bold(' WARN ') + ' ' + chalk.red('Event cap reached (' + cap + '). Set ELV_MAX_EVENTS for higher.'));
       break;
     }
 
     case 'DONE':
       state.phase = 'Complete';
       state.callStack = [];
-      state.log.push(ts + chalk.bold('\u2713 Execution complete'));
+      state.log.push(ts + chalk.bgWhite.black.bold(' DONE ') + ' ' + chalk.green('\u2713 Execution complete'));
       break;
   }
 }
@@ -195,10 +261,14 @@ function cloneState(s) {
 // React components (using createElement instead of JSX to avoid a build step)
 // ---------------------------------------------------------------------------
 
-function Panel({ label, color, focused, content, height, width }) {
+function Panel({ label, color, focused, content, height, width, phaseColor, badge, isActive }) {
   const borderColor = focused ? 'white' : color;
+  const borderStyle = focused ? 'double' : 'single';
+  const activeIndicator = isActive ? chalk.bold[phaseColor || 'green'](' *') : '';
+  const badgeText = badge ? chalk[badge.color || 'gray'](' [' + badge.text + ']') : '';
+  
   return h(Box, {
-    borderStyle: 'single',
+    borderStyle,
     borderColor,
     height,
     width,
@@ -206,9 +276,129 @@ function Panel({ label, color, focused, content, height, width }) {
     overflow: 'hidden',
   },
     h(Text, { bold: focused, color: borderColor, wrap: 'truncate' },
-      (focused ? '\u25B8 ' : '') + label
+      (focused ? '\u25B8 ' : '') + label + badgeText + activeIndicator
     ),
     h(Text, { wrap: 'truncate' }, content)
+  );
+}
+
+/**
+ * Progress bar component showing current position in the event stream
+ */
+function ProgressBar({ current, total, width, phaseColor }) {
+  const barWidth = Math.max(10, width - 12);
+  const progress = total > 0 ? Math.min(1, Math.max(0, (current + 1) / total)) : 0;
+  const filled = Math.round(progress * barWidth);
+  const empty = barWidth - filled;
+  
+  const filledBar = chalk[phaseColor || 'cyan']('\u2588'.repeat(filled));
+  const emptyBar = chalk.gray('\u2591'.repeat(empty));
+  const percentage = Math.round(progress * 100);
+  
+  return chalk.gray('[') + filledBar + emptyBar + chalk.gray(']') + ' ' + 
+         chalk.bold(String(percentage).padStart(3, ' ') + '%');
+}
+
+/**
+ * Timeline component showing phase transitions as markers
+ */
+function Timeline({ events, currentStep, width, phases }) {
+  const timelineWidth = Math.max(20, width - 4);
+  
+  if (events.length === 0) {
+    return chalk.gray('\u2500'.repeat(timelineWidth));
+  }
+  
+  const chars = new Array(timelineWidth).fill('\u2500');
+  const phaseMarkers = {
+    'SYNC_START': { char: '\u25CF', color: 'green' },
+    'SYNC_END': { char: '\u25CB', color: 'green' },
+    'CALLBACK_START': { char: '\u25AA', color: 'cyan' },
+    'DONE': { char: '\u2713', color: 'white' },
+  };
+  
+  // Mark phase transitions
+  events.forEach((evt, i) => {
+    const marker = phaseMarkers[evt.type];
+    if (marker) {
+      const pos = Math.min(timelineWidth - 1, Math.floor((i / events.length) * timelineWidth));
+      chars[pos] = chalk[marker.color](marker.char);
+    }
+  });
+  
+  // Mark current position
+  if (currentStep >= 0) {
+    const currentPos = Math.min(timelineWidth - 1, Math.floor((currentStep / events.length) * timelineWidth));
+    chars[currentPos] = chalk.bgWhite.black('\u25BC');
+  }
+  
+  return chars.join('');
+}
+
+/**
+ * Help overlay component showing all keybindings and concepts
+ */
+function HelpOverlay({ width, height, onClose }) {
+  const helpContent = [
+    '',
+    chalk.bold.cyan('  EVENT LOOP VISUALIZER - HELP'),
+    chalk.gray('  ' + '\u2500'.repeat(40)),
+    '',
+    chalk.bold.white('  NAVIGATION'),
+    '    ' + chalk.yellow('\u2190 / h') + '    Previous step',
+    '    ' + chalk.yellow('\u2192 / l') + '    Next step',
+    '    ' + chalk.yellow('\u2191 / k') + '    Scroll up (focused panel)',
+    '    ' + chalk.yellow('\u2193 / j') + '    Scroll down (focused panel)',
+    '    ' + chalk.yellow('Tab') + '       Cycle panel focus',
+    '    ' + chalk.yellow('Shift+Tab') + ' Reverse cycle focus',
+    '',
+    chalk.bold.white('  PLAYBACK'),
+    '    ' + chalk.yellow('Space') + '     Play/Pause automatic stepping',
+    '    ' + chalk.yellow('+') + '         Increase speed (faster)',
+    '    ' + chalk.yellow('-') + '         Decrease speed (slower)',
+    '    ' + chalk.yellow('r') + '         Reset to beginning',
+    '',
+    chalk.bold.white('  TESTS'),
+    '    ' + chalk.yellow('n') + '         Jump to next test',
+    '    ' + chalk.yellow('N') + '         Jump to previous test',
+    '',
+    chalk.bold.white('  OTHER'),
+    '    ' + chalk.yellow('?') + '         Toggle this help',
+    '    ' + chalk.yellow('q / Esc') + '   Quit',
+    '',
+    chalk.gray('  ' + '\u2500'.repeat(40)),
+    '',
+    chalk.bold.white('  EVENT LOOP PHASES'),
+    '    ' + chalk.green('\u25CF Synchronous') + '   Main script execution',
+    '    ' + chalk.cyan('\u25CF Microtasks') + '    Promise callbacks, queueMicrotask',
+    '    ' + chalk.yellow('\u25CF Macrotasks') + '   setTimeout, setInterval callbacks',
+    '',
+    chalk.bold.white('  QUEUE INDICATORS'),
+    '    ' + chalk.cyan('\u25CF') + ' Promise/then/await',
+    '    ' + chalk.yellow('\u25D4') + ' setTimeout',
+    '    ' + chalk.yellow('\u25D1') + ' setInterval',
+    '    ' + chalk.cyan('\u25CB') + ' queueMicrotask',
+    '    ' + chalk.magenta('\u25C8') + ' process.nextTick',
+    '',
+    chalk.gray.italic('  Press ? or Esc to close'),
+  ];
+
+  const boxWidth = Math.min(60, width - 4);
+  const boxHeight = Math.min(helpContent.length + 2, height - 4);
+  const paddingTop = Math.floor((height - boxHeight) / 2);
+  const paddingLeft = Math.floor((width - boxWidth) / 2);
+
+  return h(Box, {
+    position: 'absolute',
+    marginLeft: paddingLeft,
+    marginTop: paddingTop,
+    width: boxWidth,
+    height: boxHeight,
+    borderStyle: 'double',
+    borderColor: 'cyan',
+    flexDirection: 'column',
+  },
+    h(Text, { wrap: 'truncate' }, helpContent.slice(0, boxHeight - 2).join('\n'))
   );
 }
 
@@ -244,6 +434,11 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(DEFAULT_PLAY_SPEED_MS);
   const [focusIndex, setFocusIndex] = useState(0);
+  const [showHelp, setShowHelp] = useState(false);
+  
+  // Track recently changed variables for highlighting
+  const recentChangesRef = useRef(new Set());
+  const prevMemoryRef = useRef(new Map());
 
   // Prevent unused-variable warnings while keeping renderTick in scope
   void renderTick;
@@ -367,6 +562,18 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
   // --- Key input ---
 
   useInput((input, key) => {
+    // Help overlay takes priority
+    if (showHelp) {
+      if (input === '?' || key.escape || input === 'q') {
+        setShowHelp(false);
+      }
+      return;
+    }
+    
+    if (input === '?') {
+      setShowHelp(true);
+      return;
+    }
     if (input === 'q' || key.escape || (key.ctrl && input === 'c')) {
       exit();
       return;
@@ -498,12 +705,16 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
     sourceLines = displayLines.map((line, i) => {
       const lineNum = i + 1;
       const num = String(lineNum).padStart(Math.max(3, padWidth), ' ');
+      const highlightedLine = highlightSyntax(line || '');
+      
       if (highlightLine === lineNum) {
+        // Currently executing line - use phase-aware highlighting
+        const phaseTheme = PHASE_COLORS[state.phase] || PHASE_COLORS['Ready'];
         return highlightExternal
           ? chalk.bgYellow.black(' ' + num + '  ' + (line || '') + ' ')
           : chalk.bgWhite.black.bold(' ' + num + '  ' + (line || '') + ' ');
       }
-      return chalk.gray(num) + '  ' + (line || '');
+      return chalk.gray(num) + '  ' + highlightedLine;
     });
   } else {
     sourceLines = [chalk.gray('[Command mode \u2014 source not available]')];
@@ -533,83 +744,174 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
   const sourceContent = sliceContent(sourceLines, 0, sourceContentH);
   const consoleContent = sliceContent(state.console, 1, consoleContentH);
 
+  // Detect recently changed variables
+  const changedVars = new Set();
+  for (const [name, val] of state.memory) {
+    if (!prevMemoryRef.current.has(name) || prevMemoryRef.current.get(name) !== val) {
+      changedVars.add(name);
+    }
+  }
+  // Update previous memory state
+  prevMemoryRef.current = new Map(state.memory);
+
   const memoryLines = state.memory.size === 0
     ? [chalk.gray('(no variables tracked)')]
-    : Array.from(state.memory, ([name, val]) =>
-        ' ' + chalk.bold(name) + ' = ' + val);
+    : Array.from(state.memory, ([name, val]) => {
+        const isChanged = changedVars.has(name);
+        const typeIcon = getTypeIcon(val);
+        const nameText = isChanged 
+          ? chalk.bgYellow.black.bold(' ' + name + ' ')
+          : chalk.bold.white(name);
+        const valText = isChanged ? chalk.yellowBright(val) : val;
+        return ' ' + typeIcon + ' ' + nameText + ' = ' + valText;
+      });
   const memoryContent = sliceContent(memoryLines, 2, memoryContentH);
+  
+  // Helper to get type icon for values
+  function getTypeIcon(val) {
+    if (val === 'undefined' || val === 'null') return chalk.gray('\u2205');
+    if (val === 'true' || val === 'false') return chalk.blue('\u25C6');
+    if (!isNaN(Number(val))) return chalk.magenta('#');
+    if (val.startsWith('"') || val.startsWith("'") || val.startsWith('`')) return chalk.yellow('\u201C');
+    if (val.startsWith('[')) return chalk.cyan('\u2395');
+    if (val.startsWith('{')) return chalk.green('\u2687');
+    if (val.startsWith('function') || val.includes('=>')) return chalk.red('\u0192');
+    return chalk.gray('\u2022');
+  }
 
   const eventLogContent = sliceContent(state.log, 3, eventLogContentH);
 
+  // Enhanced call stack with visual depth indicators
   const callStackLines = state.callStack.length === 0
     ? [chalk.gray('(empty)')]
-    : state.callStack.map((s, i) =>
-        i === state.callStack.length - 1 ? chalk.bold('\u25B6 ' + s) : '  ' + s);
+    : state.callStack.map((s, i) => {
+        const isTop = i === state.callStack.length - 1;
+        const indent = '\u2502 '.repeat(i);
+        const prefix = isTop ? chalk.green('\u25B6') : chalk.gray('\u2502');
+        const text = isTop ? chalk.bold.white(s) : chalk.gray(s);
+        return ' ' + indent + prefix + ' ' + text;
+      });
   const callStackContent = sliceContent(callStackLines, 4, callStackContentH);
+
+  // Enhanced queue display with source badges
+  const getTaskBadge = (label) => {
+    if (label.includes('Promise') || label.includes('then') || label.includes('await')) return chalk.cyan('\u25CF');
+    if (label.includes('setTimeout')) return chalk.yellow('\u25D4');
+    if (label.includes('setInterval')) return chalk.yellow('\u25D1');
+    if (label.includes('queueMicrotask')) return chalk.cyan('\u25CB');
+    if (label.includes('nextTick')) return chalk.magenta('\u25C8');
+    return chalk.gray('\u25AA');
+  };
 
   const microLines = state.microQueue.length === 0
     ? [chalk.gray('(empty)')]
-    : state.microQueue.map((item, i) => (i + 1) + '. ' + item.label);
+    : state.microQueue.map((item, i) => {
+        const badge = getTaskBadge(item.label);
+        const isFirst = i === 0;
+        const text = isFirst ? chalk.bold.cyanBright(item.label) : item.label;
+        return ' ' + badge + ' ' + (i + 1) + '. ' + text;
+      });
   const microContent = sliceContent(microLines, 5, microContentH);
 
   const macroLines = state.macroQueue.length === 0
     ? [chalk.gray('(empty)')]
-    : state.macroQueue.map((item, i) => (i + 1) + '. ' + item.label);
+    : state.macroQueue.map((item, i) => {
+        const badge = getTaskBadge(item.label);
+        const isFirst = i === 0;
+        const text = isFirst ? chalk.bold.yellowBright(item.label) : item.label;
+        return ' ' + badge + ' ' + (i + 1) + '. ' + text;
+      });
   const macroContent = sliceContent(macroLines, 6, macroContentH);
 
-  // Header / footer text
+  // Phase-based theming
+  const phaseTheme = PHASE_COLORS[state.phase] || PHASE_COLORS['Ready'];
+  const phaseColorFn = chalk[phaseTheme.primary] || chalk.white;
+  const phaseAccentFn = chalk[phaseTheme.accent] || chalk.white;
+
+  // Header / footer text with enhanced visuals
   const stepLabel = currentStep < 0 ? '0' : String(currentStep + 1);
-  const playIcon = playing ? '\u25B6 Playing' : '\u23F8 Paused';
+  const playIcon = playing 
+    ? chalk.green('\u25B6') + ' Playing' 
+    : chalk.yellow('\u23F8') + ' Paused';
   const testInfo = state.currentTest ? '  Test: ' + chalk.bold(state.currentTest) : '';
+  
+  // Phase indicator with color
+  const phaseIndicator = phaseAccentFn('\u25CF') + ' ' + phaseColorFn.bold(state.phase);
+  
+  // Speed indicator with visual bars
+  const speedNormalized = (speed - MIN_PLAY_SPEED_MS) / (MAX_PLAY_SPEED_MS - MIN_PLAY_SPEED_MS);
+  const speedBars = 5;
+  const filledBars = Math.round((1 - speedNormalized) * speedBars);
+  const speedVisual = chalk.cyan('\u25AE'.repeat(filledBars)) + chalk.gray('\u25AF'.repeat(speedBars - filledBars));
+  
   const headerText =
-    ' ' + chalk.bold('Event Loop Visualizer') + '  ' +
-    'Step ' + stepLabel + '/' + totalSteps + '  ' +
-    'Phase: ' + chalk.bold(state.phase) + '  ' +
-    playIcon + '  Speed: ' + speed + 'ms' + testInfo;
+    ' ' + chalk.bold.white('Event Loop Visualizer') + '  ' +
+    chalk.gray('Step ') + chalk.bold(stepLabel + '/' + totalSteps) + '  ' +
+    phaseIndicator + '  ' +
+    playIcon + '  ' + speedVisual + ' ' + speed + 'ms' + testInfo;
+
+  // Progress bar for timeline
+  const progressBarWidth = Math.floor(cols / 3);
+  const progressBar = ProgressBar({ current: currentStep, total: totalSteps, width: progressBarWidth, phaseColor: phaseTheme.primary });
 
   const testHint = hasTests ? '  ' + chalk.bold('n/N') + ' Test' : '';
   const footerText =
-    ' ' + chalk.bold('\u2190/\u2192') + ' Step  ' +
+    ' ' + progressBar + '  ' +
+    chalk.bold('\u2190/\u2192') + ' Step  ' +
     chalk.bold('\u2191/\u2193') + ' Scroll  ' +
     chalk.bold('Tab') + ' Focus  ' +
-    chalk.bold('Space') + ' Play/Pause  ' +
+    chalk.bold('Space') + ' Play  ' +
     chalk.bold('+/-') + ' Speed  ' +
-    chalk.bold('r') + ' Reset' + testHint + '  ' + chalk.bold('q') + ' Quit';
+    chalk.bold('r') + ' Reset  ' +
+    chalk.bold('?') + ' Help' + testHint + '  ' + chalk.bold('q') + ' Quit';
 
   // --- Render tree ---
 
+  // Determine active panels based on phase
+  const isMicroActive = state.phase === 'Microtasks';
+  const isMacroActive = state.phase === 'Macrotasks';
+  const isStackActive = state.callStack.length > 0;
+
   return h(Box, { flexDirection: 'column', width: cols, height: rows },
-    h(Box, { borderStyle: 'single', borderColor: 'cyan', height: headerHeight },
+    h(Box, { borderStyle: 'single', borderColor: phaseTheme.primary, height: headerHeight },
       h(Text, { bold: true, wrap: 'truncate' }, headerText)
     ),
 
     h(Box, { flexDirection: 'row', height: mainHeight },
       h(Box, { flexDirection: 'column', width: '50%' },
         h(Panel, { label: sourceLabel, color: sourceColor, focused: focusIndex === 0,
-          content: sourceContent, height: sourceHeight }),
+          content: sourceContent, height: sourceHeight, phaseColor: phaseTheme.primary }),
         h(Panel, { label: 'Console Output', color: 'yellow', focused: focusIndex === 1,
           content: consoleContent, height: consoleHeight }),
         h(Panel, { label: 'Memory', color: 'magenta', focused: focusIndex === 2,
-          content: memoryContent, height: memoryHeight }),
+          content: memoryContent, height: memoryHeight, 
+          badge: state.memory.size > 0 ? { text: String(state.memory.size), color: 'magenta' } : null }),
       ),
 
       h(Box, { flexDirection: 'column', width: '50%' },
         h(Panel, { label: 'Call Stack', color: 'red', focused: focusIndex === 4,
-          content: callStackContent, height: callStackHeight }),
+          content: callStackContent, height: callStackHeight, isActive: isStackActive,
+          badge: state.callStack.length > 0 ? { text: String(state.callStack.length), color: 'red' } : null }),
         h(Box, { flexDirection: 'row', height: queuesHeight },
           h(Panel, { label: 'Microtask Queue', color: 'cyan', focused: focusIndex === 5,
-            content: microContent, width: '50%', height: queuesHeight }),
+            content: microContent, width: '50%', height: queuesHeight, isActive: isMicroActive,
+            badge: state.microQueue.length > 0 ? { text: String(state.microQueue.length), color: 'cyan' } : null }),
           h(Panel, { label: 'Macrotask Queue', color: 'yellow', focused: focusIndex === 6,
-            content: macroContent, width: '50%', height: queuesHeight }),
+            content: macroContent, width: '50%', height: queuesHeight, isActive: isMacroActive,
+            badge: state.macroQueue.length > 0 ? { text: String(state.macroQueue.length), color: 'yellow' } : null }),
         ),
         h(Panel, { label: 'Event Log', color: 'blue', focused: focusIndex === 3,
-          content: eventLogContent, height: eventLogHeight }),
+          content: eventLogContent, height: eventLogHeight,
+          badge: state.log.length > 0 ? { text: String(state.log.length), color: 'blue' } : null }),
       ),
     ),
 
     h(Box, { borderStyle: 'single', borderColor: 'gray', height: footerHeight },
       h(Text, { wrap: 'truncate' }, footerText)
     ),
+
+    // Help overlay (rendered on top when active)
+    showHelp && h(HelpOverlay, { width: cols, height: rows, onClose: () => setShowHelp(false) }),
   );
 }
 
