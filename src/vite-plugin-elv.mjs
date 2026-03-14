@@ -11,10 +11,11 @@
  * the output cleanly.
  */
 import { createRequire } from 'node:module';
-import MagicString from 'magic-string';
 
-const require = createRequire(import.meta.url);
-const { getTransformInsertions } = require('./transform.js');
+const _require = createRequire(import.meta.url);
+const { getTransformInsertions } = _require('./transform.js');
+
+const MagicString = _require('magic-string');
 
 const OWN_DIR = new URL('.', import.meta.url).pathname;
 

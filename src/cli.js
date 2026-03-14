@@ -294,6 +294,7 @@ function runCommandMode(command, focusFile) {
   if (isVitest && !command.includes('--config')) {
     const vitestSetupPath = escapeForJS(path.join(__dirname, 'vitest-setup.mjs'));
     const pluginPath = escapeForJS(path.join(__dirname, 'vite-plugin-elv.mjs'));
+    const elvSrcDir = escapeForJS(__dirname);
     const focusLiteral = focusFile ? "'" + escapeForJS(focusFile) + "'" : 'null';
 
     const configCandidates = [
@@ -317,9 +318,12 @@ function runCommandMode(command, focusFile) {
     lines.push(
       'const baseTest = (base && base.test) || {};',
       'const baseSetup = Array.isArray(baseTest.setupFiles) ? baseTest.setupFiles : (baseTest.setupFiles ? [baseTest.setupFiles] : []);',
+      'const baseServer = (base && base.server) || {};',
+      'const baseFsAllow = (baseServer.fs && baseServer.fs.allow) || [];',
       '',
       'export default {',
       '  ...base,',
+      "  server: { ...baseServer, fs: { ...(baseServer.fs || {}), allow: [...baseFsAllow, '" + elvSrcDir + "'] } },",
       "  plugins: [...(base.plugins || []), elvTransformPlugin({ focusFile: " + focusLiteral + " })],",
       '  test: {',
       '    ...baseTest,',
