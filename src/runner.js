@@ -7,6 +7,7 @@ const path = require('path');
 const Module = require('module');
 const { createInstrumenter } = require('./instrument');
 const { transformSource } = require('./transform');
+const { transpileSource, isTypeScriptFile, registerTsRequireHooks } = require('./ts-hooks');
 
 // Idle detection polling: IDLE_THRESHOLD_MS is how long (ms) without new events
 // before considering the script "done". POLL_INTERVAL_MS is how often we check.
@@ -25,17 +26,9 @@ if (!scriptPath) {
 const resolved = path.resolve(scriptPath);
 const ext = path.extname(resolved).toLowerCase();
 
-if (['.ts', '.tsx', '.jsx', '.mts', '.cts'].includes(ext)) {
+if (ext === '.mts' || ext === '.mjs') {
   process.stderr.write(
-    'Error: File mode does not support TypeScript/JSX (' + ext + ').\n' +
-    'Hint: Use "elv vitest run ' + scriptPath + '" or "elv jest" for TS/JSX files.\n'
-  );
-  process.exit(1);
-}
-
-if (ext === '.mjs') {
-  process.stderr.write(
-    'Error: File mode does not support ES modules (.mjs files).\n' +
+    'Error: File mode does not support ES modules (' + ext + ').\n' +
     'Hint: Use "elv vitest run ' + scriptPath + '" for ESM files.\n'
   );
   process.exit(1);
@@ -62,6 +55,9 @@ if (isESMPackage(resolved)) {
   process.exit(1);
 }
 
+const isTS = isTypeScriptFile(resolved);
+if (isTS) registerTsRequireHooks();
+
 let focusFile = process.env.ELV_FOCUS_FILE || null;
 if (focusFile) { try { focusFile = fs.realpathSync(focusFile); } catch (_) {} }
 
@@ -72,9 +68,10 @@ const _setTimeout = inst.originals.setTimeout;
 inst.emit({ type: 'SYNC_START', label: path.basename(resolved) });
 
 try {
-  const source = fs.readFileSync(resolved, 'utf8');
-  const instrumented = transformSource(source, resolved);
-  if (instrumented === source) {
+  const rawSource = fs.readFileSync(resolved, 'utf8');
+  const jsSource = isTS ? transpileSource(rawSource, resolved) : rawSource;
+  const instrumented = transformSource(jsSource, resolved);
+  if (instrumented === jsSource) {
     inst.emit({ type: 'LOG', value: '[elv] Warning: Could not parse source. Variable tracking unavailable.', subtype: 'warn' });
   }
   const mod = new Module(resolved, module);

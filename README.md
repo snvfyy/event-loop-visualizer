@@ -26,9 +26,6 @@ See how the call stack, microtask queue, macrotask queue, and variables change a
 
 There are great online event loop visualizers out there, but they all run in a sandbox with toy snippets. `js-elv` runs against **your actual code**.
 
-- **Debug real async bugs**: step through your actual `setTimeout`, `Promise`, and `await` chains to see exactly when callbacks fire and in what order.
-- **Learn by seeing**: watch how microtasks drain before macrotasks, why `await` yields, and how closures capture variables, all in a live terminal UI.
-
 ---
 
 ## 📦 Installation
@@ -53,6 +50,7 @@ npx js-elv examples/async-await.js
 
 ```bash
 js-elv script.js
+js-elv script.ts
 ```
 
 ### Jest and Vitest tests
@@ -71,14 +69,16 @@ js-elv --cmd "node server.js"
 js-elv --cmd "pnpm nx run my-project:test --skip-nx-cache"
 ```
 
-### Focus mode
+### Focus mode (`--focus` / `-f`)
 
 Narrow capture to a single file. Only events originating from (or passing through) the focused file are recorded:
 
 ```bash
 js-elv script.js --focus src/services/auth.js
-js-elv jest --testPathPatterns MyTest --focus src/__tests__/MyTest.spec.ts
+js-elv jest --testPathPatterns MyTest -f src/__tests__/MyTest.spec.ts
 ```
+
+For Jest and Vitest, if `--focus` is omitted the tool auto-detects the test file from the runner arguments.
 
 ### Examples
 
@@ -89,6 +89,7 @@ js-elv examples/async-await.js
 js-elv examples/closure-loop.js
 js-elv examples/nested-async.js
 js-elv examples/promise-executor.js
+js-elv examples/typed-async.ts
 ```
 
 ---
@@ -169,11 +170,10 @@ Known limitations and edge cases
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Pending promise timing** | `.then(fn)` on a pending promise shows `fn` entering the queue immediately. In reality it's enqueued on resolve. Execution order is still correct.                                                                                                                                                      |
 | **Jest fake timers**       | `jest.useFakeTimers()` replaces timers after js-elv's patches. Timer events won't be captured. Promise + variable tracking still work.                                                                                                                                                                     |
-| **TypeScript / JSX**       | Not natively supported. `js-elv script.ts` won't work. TS/JSX require a build step. Use `js-elv vitest run` or `js-elv jest` which handle TS/JSX via their own transforms. In test mode, line numbers come from compiled JS; minimal type annotations map correctly, but heavy generics or decorators may drift. |
+| **ESM**                    | `.mjs` and `.mts` files are not transformed in file or command mode (only CJS extensions are hooked via `require`). Use `js-elv vitest run` or `js-elv jest` for ESM files. `.ts`, `.tsx`, `.jsx`, and `.cts` work natively via tsx/esbuild. Line numbers come from transpiled JS, so heavy generics or decorators may cause slight drift. |
 | **setInterval cap**        | Capped at 10 iterations to prevent infinite events. Configurable via `ELV_INTERVAL_CAP`.                                                                                                                                                                                                                |
 | **Event cap**              | 5000 events per process. Beyond this, a warning is shown. Configurable via `ELV_MAX_EVENTS`.                                                                                                                                                                                                            |
 | **Worker threads**         | `worker_threads` don't inherit `NODE_OPTIONS`. Code in workers won't be instrumented.                                                                                                                                                                                                                   |
-| **ESM in command mode**    | `.mjs` files loaded via `--cmd` aren't transformed (only `.js` and `.cjs` are hooked via `require`). Vitest/Jest modes handle ESM natively.                                                                                                                                                             |
 | **Windows**                | Command mode uses `sh -c` which requires a POSIX shell. On Windows, use WSL or Git Bash.                                                                                                                                                                                                                |
 | **Bun / Deno**             | Only Node.js is supported.                                                                                                                                                                                                                                                                              |
 

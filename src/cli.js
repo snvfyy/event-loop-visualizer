@@ -35,8 +35,9 @@ function main(argv) {
     process.exit(0);
   }
 
-  // Parse --focus flag
-  const focusIndex = args.indexOf('--focus');
+  // Parse --focus / -f flag
+  let focusIndex = args.indexOf('--focus');
+  if (focusIndex === -1) focusIndex = args.indexOf('-f');
   let focusFile = null;
   if (focusIndex !== -1) {
     focusFile = args[focusIndex + 1];
@@ -51,6 +52,11 @@ function main(argv) {
     }
     try { focusFile = fs.realpathSync(focusFile); } catch (_) {}
     args.splice(focusIndex, 2);
+  }
+
+  if (args.length === 0) {
+    process.stderr.write('Error: no script or command provided.\nHint:  js-elv <script.js|ts>  or  js-elv --help\n');
+    process.exit(1);
   }
 
   const firstArg = args[0];
@@ -93,7 +99,7 @@ function main(argv) {
   if (!fs.existsSync(scriptPath)) {
     const suggestion = scriptPath.includes('test') || scriptPath.includes('spec')
       ? '\nHint:  js-elv vitest run ' + scriptPath + '  (for test files)'
-      : '\nHint:  js-elv <script.js>  or  js-elv --help';
+      : '\nHint:  js-elv <script.js|ts>  or  js-elv --help';
     process.stderr.write('Error: file not found: ' + scriptPath + suggestion + '\n');
     process.exit(1);
   }

@@ -242,6 +242,43 @@ describe('integration: rate-limit-pattern.js', () => {
   });
 });
 
+describe('integration: typed-async.ts (TypeScript support)', () => {
+  let events;
+
+  it('captures the full event lifecycle from a .ts file', async () => {
+    events = await runScript('examples/typed-async.ts');
+
+    const types = events.map(e => e.type);
+    expect(types[0]).toBe('SYNC_START');
+    expect(types[types.length - 1]).toBe('DONE');
+    expect(types).toContain('SYNC_END');
+  });
+
+  it('logs appear in the correct execution order', () => {
+    const logs = events.filter(e => e.type === 'LOG').map(e => e.value);
+
+    expect(logs).toEqual([
+      'fetching user...',
+      'got: Alice',
+    ]);
+  });
+
+  it('enqueues a macrotask for setTimeout and a microtask for the await', () => {
+    const macros = events.filter(e => e.type === 'ENQUEUE_MACRO' && e.subtype === 'setTimeout');
+    const micros = events.filter(e => e.type === 'ENQUEUE_MICRO');
+
+    expect(macros.length).toBe(1);
+    expect(micros.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('tracks the user variable in MEMORY', () => {
+    const mem = events.find(e => e.type === 'MEMORY' && e.label === 'user');
+
+    expect(mem).toBeDefined();
+    expect(mem.value).toContain('Alice');
+  });
+});
+
 describe('integration: promise-executor.js', () => {
   it('captures sync executor and then microtask', async () => {
     const events = await runScript('examples/promise-executor.js');

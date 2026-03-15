@@ -28,6 +28,7 @@ const Module = require('module');
 const { createInstrumenter } = require('./instrument');
 const { transformSource } = require('./transform');
 const { writeEventFile } = require('./write-events');
+const { transpileSource, registerTsRequireHooks, TS_EXTENSIONS } = require('./ts-hooks');
 
 let focusFile = process.env.ELV_FOCUS_FILE || null;
 if (focusFile) { try { focusFile = fs.realpathSync(focusFile); } catch (_) {} }
@@ -38,13 +39,14 @@ const _setImmediate = inst.originals.setImmediate || setImmediate;
 
 const _ownDir = __dirname + path.sep;
 
-function registerHook(ext) {
+function registerHook(ext, transpile) {
   const origHandler = Module._extensions[ext] || Module._extensions['.js'];
   Module._extensions[ext] = function elvRequireHook(mod, filename) {
     if (filename.includes('node_modules') || filename.startsWith(_ownDir)) {
       return origHandler(mod, filename);
     }
-    const source = fs.readFileSync(filename, 'utf8');
+    let source = fs.readFileSync(filename, 'utf8');
+    if (transpile) source = transpileSource(source, filename);
     const transformed = transformSource(source, filename);
     mod._compile(transformed, filename);
   };
@@ -52,6 +54,9 @@ function registerHook(ext) {
 
 registerHook('.js');
 registerHook('.cjs');
+
+registerTsRequireHooks();
+for (const ext of TS_EXTENSIONS) registerHook(ext, true);
 
 _setImmediate(() => {
   inst.emit({ type: 'SYNC_START', label: 'process ' + process.pid });
