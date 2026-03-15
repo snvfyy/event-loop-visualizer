@@ -63,14 +63,14 @@ describe('applyEvent', () => {
     const state = createInitialState();
     applyEvent(state, { type: 'ENQUEUE_MACRO', label: 'setTimeout(fn, 0)', taskId: 1, ts: 1000 });
     expect(state.macroQueue).toEqual([{ label: 'setTimeout(fn, 0)', taskId: 1 }]);
-    expect(state.log[0]).toContain('Macrotask Queue');
+    expect(state.log[0]).toContain('setTimeout(fn, 0)');
   });
 
   it('handles ENQUEUE_MICRO', () => {
     const state = createInitialState();
     applyEvent(state, { type: 'ENQUEUE_MICRO', label: '.then(cb)', taskId: 2, ts: 1000 });
     expect(state.microQueue).toEqual([{ label: '.then(cb)', taskId: 2 }]);
-    expect(state.log[0]).toContain('Microtask Queue');
+    expect(state.log[0]).toContain('.then(cb)');
   });
 
   it('handles CALLBACK_START for microtask', () => {
@@ -130,14 +130,14 @@ describe('applyEvent', () => {
     state.currentTest = 'my test';
     applyEvent(state, { type: 'TEST_END', label: 'my test', value: 'pass', ts: 1000 });
     expect(state.currentTest).toBeNull();
-    expect(state.log[0]).toContain('\u2713');
+    expect(state.log[0]).toContain('PASS');
   });
 
   it('handles TEST_END fail', () => {
     const state = createInitialState();
     state.currentTest = 'my test';
     applyEvent(state, { type: 'TEST_END', label: 'my test', value: 'fail', ts: 1000 });
-    expect(state.log[0]).toContain('\u2717');
+    expect(state.log[0]).toContain('FAIL');
   });
 
   it('handles DONE', () => {
