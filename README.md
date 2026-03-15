@@ -1,4 +1,4 @@
-# Event Loop Visualizer (`js-elv`)
+# JavaScript Event Loop Visualizer (`js-elv`)
 
 **Step through JavaScript execution one event at a time.**
 

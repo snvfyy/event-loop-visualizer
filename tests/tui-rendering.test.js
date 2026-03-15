@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { render, cleanup } from 'ink-testing-library';
 import { createElement } from 'react';
 import { App } from '../src/ui.mjs';
+import { stripAnsi } from '../src/ui/ansi-utils.mjs';
 
 const h = createElement;
 
@@ -10,10 +11,6 @@ const KEY_LEFT = '\x1b[D';
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
-}
-
-function stripAnsi(str) {
-  return str.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
 const SOURCE_CODE = [

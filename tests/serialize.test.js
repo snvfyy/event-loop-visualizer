@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { safeSerialize } from '../src/instrument.js';
+import { safeSerialize } from '../src/serialize.js';
 
 describe('safeSerialize', () => {
   it('serializes primitives', () => {
