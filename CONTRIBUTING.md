@@ -40,7 +40,7 @@ Open an issue with the **feature request** label. Describe:
   ```
 4. **Create a branch** from `main`:
   ```bash
-   git switch my-feature
+   git switch -c my-feature
   ```
 5. **Make your changes** — see the [development guide](#development) below
 6. **Test** your changes:
@@ -55,25 +55,30 @@ Open an issue with the **feature request** label. Describe:
 ### Project Structure
 
 ```
-bin/            → CLI entry point
+bin/
+  elv.js
 src/
-  cli.js               → Argument parsing and orchestration
-  instrument.js        → Global patching and async_hooks event capture
-  runner.js            → Child process management (file/command/test modes)
-  transform.js         → AST-based source transformation and variable tracking
-  classify.js          → Event stream classification and ordering
-  ui.js                → Blessed-based TUI rendering
-  preload.js           → NODE_OPTIONS preload script for command mode
-  jest-environment.js  → Custom Jest test environment
-  vitest-environment.mjs → Custom Vitest test environment
-  vitest-setup.mjs     → Vitest beforeEach/afterEach for test boundaries
-  vite-plugin-elv.mjs  → Vite plugin for source transformation in Vitest
-  types.js             → JSDoc type definitions
+  cli.js
+  instrument.js
+  runner.js
+  transform.js
+  classify.js
+  ui.mjs
+  write-events.js
+  preload.js
+  jest-environment.js
+  vitest-environment.mjs
+  vitest-setup.mjs
+  vite-plugin-elv.mjs
+  types.js
 tests/
-  classify.test.js     → Unit tests for process classification
-  transform.test.js    → Tests for AST-based source transformation
-  integration.test.js  → End-to-end tests via runner.js fork
-examples/              → Example scripts for testing and demos
+  classify.test.js
+  transform.test.js
+  event-capture.test.js
+  tui-rendering.test.js
+  ui.test.js
+  serialize.test.js
+examples/
 ```
 
 ### Running Tests
@@ -91,9 +96,11 @@ npx vitest run tests/transform.test.js
 
 The test suite includes:
 
-- **Unit tests** (`classify.test.js`) — pure function tests for process classification
-- **Module tests** (`transform.test.js`) — tests for AST-based source transformation
-- **Integration tests** (`integration.test.js`) — forks `runner.js` with example scripts and asserts on the captured event stream (no TUI involved)
+- **Unit tests** (`classify.test.js`, `serialize.test.js`) — pure function tests for classification and serialization
+- **Transform tests** (`transform.test.js`) — tests for AST-based source transformation
+- **State logic tests** (`ui.test.js`) — unit tests for `applyEvent`, `createInitialState`, and `pathsMatch`
+- **TUI rendering tests** (`tui-rendering.test.js`) — ink component rendering with simulated keyboard interaction
+- **Integration tests** (`event-capture.test.js`) — forks `runner.js` with example scripts and asserts on the captured event stream
 
 ### Running Examples Manually
 
@@ -112,7 +119,7 @@ node bin/elv.js examples/nested-async.js
 
 ### ESM / CJS Boundary
 
-The project uses **CJS** (`.js`) for most files and **ESM** (`.mjs`) for the three Vitest integration files:
+The project uses **CJS** (`.js`) for most files and **ESM** (`.mjs`) for `ui.mjs` and the three Vitest integration files:
 - `vitest-environment.mjs` — Custom Vitest test environment
 - `vitest-setup.mjs` — Vitest `beforeEach`/`afterEach` hooks for test boundaries
 - `vite-plugin-elv.mjs` — Vite plugin for source-map-preserving transforms

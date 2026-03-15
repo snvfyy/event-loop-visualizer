@@ -2,27 +2,23 @@
 
 **Step through JavaScript execution one event at a time.**
 
-See how the call stack, microtask queue, macrotask queue, and variables change at each step — in your terminal.
-
-```
-┌────────────────── Header ───────────────────┐
-│ Step 5/17   Phase: Microtasks   ▶ Playing   │
-├─── Source Code ──┬─── Call Stack ───────────┤
-│  1  console.log  │ ▶ Promise.then(fn)       │
-│ [2  setTimeout]  ├── Micro Q ──┬─ Macro Q ──┤
-│  3  ...          │ (empty)     │ 1. set...  │
-├── Console Out ───┼─── Event Log ────────────┤
-│ > start          │ ▶ Script started         │
-│ > end            │ [T] → setTimeout(fn, 0)  │
-├── Memory ────────┤                          │
-│ count = 3        │ +1ms ▶ fn()              │
-│ result = "ok"    │ +2ms [M] → .then(cb)     │
-├─────────────────────────────────────────────┤
-│ ←/→ Step ↑/↓ Scroll Tab Focus Space Play    │
-└─────────────────────────────────────────────┘
-```
+See how the call stack, microtask queue, macrotask queue, and variables change at each step, in your terminal.
 
 ![demo](demo.gif)
+
+## Table of Contents
+
+- [Why?](#-why)
+- [Installation](#-installation)
+- [Usage](#-usage)
+- [TUI Controls](#-tui-controls)
+- [How It Works](#-how-it-works)
+- [Compatibility](#-compatibility)
+- [Limitations](#%EF%B8%8F-limitations)
+- [Environment Variables](#%EF%B8%8F-environment-variables)
+- [Issues](#-issues)
+- [Contributing](#-contributing)
+- [License](#-license)
 
 ---
 
@@ -30,18 +26,22 @@ See how the call stack, microtask queue, macrotask queue, and variables change a
 
 There are great online event loop visualizers out there, but they all run in a sandbox with toy snippets. `elv` runs against **your actual code**.
 
+- **Debug real async bugs**: step through your actual `setTimeout`, `Promise`, and `await` chains to see exactly when callbacks fire and in what order.
+- **Learn by seeing**: watch how microtasks drain before macrotasks, why `await` yields, and how closures capture variables, all in a live terminal UI.
+
 ---
 
-## 📦 Install
+## 📦 Installation
 
 ```bash
-# Globally
 npm install -g event-loop-visualizer
+```
 
-# As a dev dependency
+```bash
 npm install -D event-loop-visualizer
+```
 
-# Without installing
+```bash
 npx event-loop-visualizer examples/async-await.js
 ```
 
@@ -62,7 +62,7 @@ elv jest --testPathPatterns MyTest
 elv vitest run src/utils.test.ts
 ```
 
-Each `it()` / `test()` block gets a visual boundary — use `n` / `N` to jump between tests.
+Each `it()` / `test()` block gets a visual boundary. Use `n` / `N` to jump between tests.
 
 ### Any command
 
@@ -78,6 +78,17 @@ Narrow capture to a single file. Only events originating from (or passing throug
 ```bash
 elv script.js --focus src/services/auth.js
 elv jest --testPathPatterns MyTest --focus src/__tests__/MyTest.spec.ts
+```
+
+### Examples
+
+The `examples/` directory has scripts covering core event loop concepts. Run any of them and step through interactively:
+
+```bash
+elv examples/async-await.js
+elv examples/closure-loop.js
+elv examples/nested-async.js
+elv examples/promise-executor.js
 ```
 
 ---
@@ -104,34 +115,67 @@ elv jest --testPathPatterns MyTest --focus src/__tests__/MyTest.spec.ts
 
 ---
 
-## 📂 Examples
+## 🔍 How It Works
 
-The `examples/` directory has scripts covering core event loop concepts. Run any of them and step through interactively:
+`elv` instruments your code using three layers:
 
-```bash
-elv examples/async-await.js
-elv examples/closure-loop.js
-elv examples/nested-async.js
-elv examples/promise-executor.js
-```
+1. **AST transform**: Acorn parses your source and injects `__elvTrack()` / `__elvStep()` calls after variable mutations and function calls, enabling the Memory and Sync Step panels.
+2. **Global patching**: `setTimeout`, `setInterval`, `queueMicrotask`, `process.nextTick`, `Promise.prototype.then/catch`, and `console.`* are monkey-patched to emit events when callbacks are enqueued and executed.
+3. **async_hooks**: Node's `async_hooks` API tracks native `await` / `Promise` continuations that don't go through `.then()` directly.
+
+Events are collected into a JSON array, then replayed step-by-step in the ink TUI.
+
+---
+
+## 🟢 Compatibility
+
+**Node.js**  
+
+
+| Version   | Status                                                                   |
+| --------- | ------------------------------------------------------------------------ |
+| Node 22   | Recommended. Full support.                                               |
+| Node 20   | Full support.                                                            |
+| Node 18   | Supported. Some `async_hooks` edge cases may produce extra/fewer events. |
+| Node < 18 | Not supported.                                                           |
+
+
+**Test Runners**  
+
+
+| Tool   | Versions | Notes                                              |
+| ------ | -------- | -------------------------------------------------- |
+| Vitest | 1.x+     | Tested with 4.x. Vitest 4 requires Node 20+.       |
+| Jest   | 30+      | Uses `vm.compileFunction` (introduced in Jest 30). |
+
+
+**Vite**  
+
+
+| Version  | Status                                                 |
+| -------- | ------------------------------------------------------ |
+| Vite 6+  | Supported (via Vitest 4 peer dependency).              |
+| Vite 2–5 | The plugin API is compatible, but not actively tested. |
+
 
 ---
 
 ## ⚠️ Limitations
 
+Known limitations and edge cases  
 
-| Limitation                      | Details                                                                                                                                            |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Pending promise timing**      | `.then(fn)` on a pending promise shows `fn` entering the queue immediately. In reality it's enqueued on resolve. Execution order is still correct. |
-| **Jest fake timers**            | `jest.useFakeTimers()` replaces timers after elv's patches — timer events won't be captured. Promise + variable tracking still work.               |
-| **TypeScript/JSX in file mode** | `elv script.ts` is not supported — TypeScript and JSX require a build step. Use `elv vitest run` or `elv jest` which handle TS/JSX natively.       |
-| **TypeScript line numbers**     | In test mode, line numbers come from compiled JS. Minimal type annotations match perfectly; heavy generics/decorators may drift slightly.          |
-| **setInterval cap**             | Capped at 10 iterations to prevent infinite events. Configurable via `ELV_INTERVAL_CAP`.                                                           |
-| **Event cap**                   | 5000 events per process. Beyond this, a warning is shown. Configurable via `ELV_MAX_EVENTS`.                                                       |
-| **Worker threads**              | `worker_threads` don't inherit `NODE_OPTIONS` — code in workers won't be instrumented.                                                             |
-| **ESM in command mode**         | `.mjs` files loaded via `--cmd` aren't transformed (only `.js` and `.cjs` are hooked via `require`). Vitest/Jest modes handle ESM natively.        |
-| **Windows**                     | Command mode uses `sh -c` which requires a POSIX shell. On Windows, use WSL or Git Bash.                                                           |
-| **Bun / Deno**                  | Only Node.js is supported.                                                                                                                         |
+
+| Limitation                 | Details                                                                                                                                                                                                                                                                                                 |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Pending promise timing** | `.then(fn)` on a pending promise shows `fn` entering the queue immediately. In reality it's enqueued on resolve. Execution order is still correct.                                                                                                                                                      |
+| **Jest fake timers**       | `jest.useFakeTimers()` replaces timers after elv's patches. Timer events won't be captured. Promise + variable tracking still work.                                                                                                                                                                     |
+| **TypeScript / JSX**       | Not natively supported. `elv script.ts` won't work. TS/JSX require a build step. Use `elv vitest run` or `elv jest` which handle TS/JSX via their own transforms. In test mode, line numbers come from compiled JS; minimal type annotations map correctly, but heavy generics or decorators may drift. |
+| **setInterval cap**        | Capped at 10 iterations to prevent infinite events. Configurable via `ELV_INTERVAL_CAP`.                                                                                                                                                                                                                |
+| **Event cap**              | 5000 events per process. Beyond this, a warning is shown. Configurable via `ELV_MAX_EVENTS`.                                                                                                                                                                                                            |
+| **Worker threads**         | `worker_threads` don't inherit `NODE_OPTIONS`. Code in workers won't be instrumented.                                                                                                                                                                                                                   |
+| **ESM in command mode**    | `.mjs` files loaded via `--cmd` aren't transformed (only `.js` and `.cjs` are hooked via `require`). Vitest/Jest modes handle ESM natively.                                                                                                                                                             |
+| **Windows**                | Command mode uses `sh -c` which requires a POSIX shell. On Windows, use WSL or Git Bash.                                                                                                                                                                                                                |
+| **Bun / Deno**             | Only Node.js is supported.                                                                                                                                                                                                                                                                              |
 
 
 ---
@@ -148,57 +192,24 @@ elv examples/promise-executor.js
 
 ---
 
-## 🔍 How It Works
+## 🐛 Issues
 
-`elv` instruments your code using three layers:
+### Bugs
 
-1. **AST transform** — Acorn parses your source and injects `__elvTrack()` / `__elvStep()` calls after variable mutations and function calls, enabling the Memory and Sync Step panels.
-2. **Global patching** — `setTimeout`, `setInterval`, `queueMicrotask`, `process.nextTick`, `Promise.prototype.then/catch`, and `console.`* are monkey-patched to emit events when callbacks are enqueued and executed.
-3. **async_hooks** — Node's `async_hooks` API tracks native `await` / `Promise` continuations that don't go through `.then()` directly.
+**[See Bugs](https://github.com/snvfyy/js-loop-visualizer/issues?q=is%3Aissue+is%3Aopen+label%3Abug+sort%3Acreated-desc)**
 
-Events are collected into a JSON array, then replayed step-by-step in the ink TUI.
+### Feature Requests
 
-> **Note:** `async_hooks` is stability 1 (experimental) in Node.js. Promise tracking behavior may differ slightly across Node 18, 20, and 22. `elv` is tested against Node 18+ and works best with Node 20 or 22.
-
----
-
-## 🟢 Compatibility
-
-### Node.js
-
-
-| Version   | Status                                                                   |
-| --------- | ------------------------------------------------------------------------ |
-| Node 22   | Recommended. Full support.                                               |
-| Node 20   | Full support.                                                            |
-| Node 18   | Supported. Some `async_hooks` edge cases may produce extra/fewer events. |
-| Node < 18 | Not supported.                                                           |
-
-
-### Test Runners
-
-
-| Tool   | Versions | Notes                                              |
-| ------ | -------- | -------------------------------------------------- |
-| Vitest | 1.x+     | Tested with 4.x. Vitest 4 requires Node 20+.       |
-| Jest   | 30+      | Uses `vm.compileFunction` (introduced in Jest 30). |
-
-
-### Vite
-
-
-| Version  | Status                                                 |
-| -------- | ------------------------------------------------------ |
-| Vite 6+  | Supported (via Vitest 4 peer dependency).              |
-| Vite 2–5 | The plugin API is compatible, but not actively tested. |
-
+**[See Feature Requests](https://github.com/snvfyy/js-loop-visualizer/issues?q=is%3Aissue+sort%3Areactions-%2B1-desc+label%3Aenhancement+is%3Aopen)**
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Check out the [Contributing Guide](CONTRIBUTING.md) for setup instructions, project structure, and PR guidelines.
+Contributions are welcome! Check out the [Contributing Guide](CONTRIBUTING.md).
 
 ---
 
-**MIT License** · by [Snvfyy](https://github.com/snvfyy)
+## 📄 License
+
+[MIT](LICENSE) · by [Snvfyy](https://github.com/snvfyy)
