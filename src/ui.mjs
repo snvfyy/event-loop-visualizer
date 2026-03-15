@@ -16,12 +16,12 @@ const PANEL_COUNT = 7;
 
 // Phase-based color themes
 const PHASE_COLORS = {
-  'Ready': { primary: 'gray', accent: 'white', dim: 'gray' },
-  'Synchronous': { primary: 'green', accent: 'greenBright', dim: 'gray' },
-  'Sync Complete': { primary: 'green', accent: 'greenBright', dim: 'gray' },
-  'Microtasks': { primary: 'cyan', accent: 'cyanBright', dim: 'gray' },
-  'Macrotasks': { primary: 'yellow', accent: 'yellowBright', dim: 'gray' },
-  'Complete': { primary: 'gray', accent: 'white', dim: 'gray' },
+  'Ready': { primary: 'gray', accent: 'white' },
+  'Synchronous': { primary: 'green', accent: 'greenBright' },
+  'Sync Complete': { primary: 'green', accent: 'greenBright' },
+  'Microtasks': { primary: 'cyan', accent: 'cyanBright' },
+  'Macrotasks': { primary: 'yellow', accent: 'yellowBright' },
+  'Complete': { primary: 'gray', accent: 'white' },
 };
 
 // JavaScript syntax highlighting keywords
@@ -78,6 +78,42 @@ function highlightSyntax(line) {
   return result;
 }
 
+/**
+ * Strip ANSI SGR escape codes from a string to get visible text only.
+ * @param {string} str
+ * @returns {string}
+ */
+function stripAnsi(str) {
+  return str.replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+/**
+ * Truncate a string containing ANSI codes to a maximum visible width.
+ * Preserves escape sequences before the cut point and resets formatting after.
+ * @param {string} str
+ * @param {number} maxWidth
+ * @returns {string}
+ */
+function truncateAnsi(str, maxWidth) {
+  if (maxWidth <= 0) return '';
+  if (stripAnsi(str).length <= maxWidth) return str;
+
+  const target = Math.max(0, maxWidth - 1);
+  let visible = 0;
+  let i = 0;
+
+  while (i < str.length && visible < target) {
+    if (str.charCodeAt(i) === 0x1b && i + 1 < str.length && str.charCodeAt(i + 1) === 0x5b) {
+      const mIdx = str.indexOf('m', i + 2);
+      if (mIdx !== -1) { i = mIdx + 1; continue; }
+    }
+    visible++;
+    i++;
+  }
+
+  return str.slice(0, i) + '\x1b[0m\u2026';
+}
+
 const _realPathCache = new Map();
 /**
  * Compares two file paths, handling symlinks (e.g. macOS /tmp vs /private/tmp).
@@ -125,7 +161,7 @@ function applyEvent(state, event) {
     : '';
 
   const delta = (event.ts && state.prevTs) ? event.ts - state.prevTs : 0;
-  const ts = chalk.gray('+' + delta + 'ms') + ' ';
+  const ts = chalk.gray(('+' + delta + 'ms').padStart(7)) + ' ';
   if (event.ts) state.prevTs = event.ts;
 
   switch (event.type) {
@@ -152,14 +188,14 @@ function applyEvent(state, event) {
     case 'ENQUEUE_MACRO': {
       const label = event.label || 'macrotask';
       state.macroQueue.push({ label, taskId: event.taskId });
-      state.log.push(ts + chalk.bgYellow.black(' +T ') + ' ' + chalk.yellow('\u2192') + ' ' + label + fileTag);
+      state.log.push(ts + chalk.bgYellow.black('  +T   ') + ' ' + chalk.yellow('\u2192') + ' ' + label + fileTag);
       break;
     }
 
     case 'ENQUEUE_MICRO': {
       const label = event.label || 'microtask';
       state.microQueue.push({ label, taskId: event.taskId });
-      state.log.push(ts + chalk.bgCyan.black(' +M ') + ' ' + chalk.cyan('\u2192') + ' ' + label + fileTag);
+      state.log.push(ts + chalk.bgCyan.black('  +M   ') + ' ' + chalk.cyan('\u2192') + ' ' + label + fileTag);
       break;
     }
 
@@ -168,11 +204,11 @@ function applyEvent(state, event) {
       if (event.kind === 'micro') {
         state.microQueue = state.microQueue.filter(item => item.taskId !== event.taskId);
         state.phase = 'Microtasks';
-        state.log.push(ts + chalk.bgCyan.black(' \u25B6M ') + ' ' + chalk.cyanBright.bold(label) + fileTag);
+        state.log.push(ts + chalk.bgCyan.black('  \u25B6M   ') + ' ' + chalk.cyanBright.bold(label) + fileTag);
       } else {
         state.macroQueue = state.macroQueue.filter(item => item.taskId !== event.taskId);
         state.phase = 'Macrotasks';
-        state.log.push(ts + chalk.bgYellow.black(' \u25B6T ') + ' ' + chalk.yellowBright.bold(label) + fileTag);
+        state.log.push(ts + chalk.bgYellow.black('  \u25B6T   ') + ' ' + chalk.yellowBright.bold(label) + fileTag);
       }
       state.callStack.push(label);
       break;
@@ -195,7 +231,7 @@ function applyEvent(state, event) {
         const truncatedValue = val.length > MAX_MEMORY_DISPLAY_LEN
           ? val.substring(0, MAX_MEMORY_DISPLAY_LEN - 3) + '...'
           : val;
-        state.log.push(ts + chalk.bgMagenta.white(' VAR ') + ' ' + chalk.magentaBright(event.label) + ' = ' + chalk.white(truncatedValue) + fileTag);
+        state.log.push(ts + chalk.bgMagenta.white('  VAR  ') + ' ' + chalk.magentaBright(event.label) + ' = ' + chalk.white(truncatedValue) + fileTag);
       }
       break;
 
@@ -206,7 +242,7 @@ function applyEvent(state, event) {
       state.memory = new Map();
       state.phase = 'Synchronous';
       state.log.push('');
-      state.log.push(ts + chalk.bgGreen.black.bold(' TEST ') + ' ' + chalk.greenBright.bold(testName));
+      state.log.push(ts + chalk.bgGreen.black.bold(' TEST  ') + ' ' + chalk.greenBright.bold(testName));
       break;
     }
 
@@ -214,9 +250,9 @@ function applyEvent(state, event) {
       const testName = event.label || 'test';
       const passed = event.value === 'pass';
       if (passed) {
-        state.log.push(ts + chalk.bgGreen.black.bold(' PASS ') + ' ' + chalk.green(testName));
+        state.log.push(ts + chalk.bgGreen.black.bold(' PASS  ') + ' ' + chalk.green(testName));
       } else {
-        state.log.push(ts + chalk.bgRed.white.bold(' FAIL ') + ' ' + chalk.red(testName));
+        state.log.push(ts + chalk.bgRed.white.bold(' FAIL  ') + ' ' + chalk.red(testName));
       }
       state.currentTest = null;
       break;
@@ -224,20 +260,20 @@ function applyEvent(state, event) {
 
     case 'SYNC_STEP': {
       const label = event.label || '';
-      state.log.push('       ' + chalk.gray('\u2502 ') + chalk.dim(label));
+      state.log.push('        ' + chalk.gray('\u2502 ') + chalk.dim(label));
       break;
     }
 
     case 'EVENT_CAP_REACHED': {
       const cap = event.value || '5000';
-      state.log.push(ts + chalk.bgRed.white.bold(' WARN ') + ' ' + chalk.red('Event cap reached (' + cap + '). Set ELV_MAX_EVENTS for higher.'));
+      state.log.push(ts + chalk.bgRed.white.bold(' WARN  ') + ' ' + chalk.red('Event cap reached (' + cap + '). Set ELV_MAX_EVENTS for higher.'));
       break;
     }
 
     case 'DONE':
       state.phase = 'Complete';
       state.callStack = [];
-      state.log.push(ts + chalk.bgWhite.black.bold(' DONE ') + ' ' + chalk.green('\u2713 Execution complete'));
+      state.log.push(ts + chalk.bgWhite.black.bold(' DONE  ') + ' ' + chalk.green('\u2713 Execution complete'));
       break;
   }
 }
@@ -266,6 +302,7 @@ function Panel({ label, color, focused, content, height, width, phaseColor, badg
   const borderStyle = focused ? 'double' : 'single';
   const activeIndicator = isActive ? chalk.bold[phaseColor || 'green'](' *') : '';
   const badgeText = badge ? chalk[badge.color || 'gray'](' [' + badge.text + ']') : '';
+  const contentLines = content ? content.split('\n') : [];
   
   return h(Box, {
     borderStyle,
@@ -278,7 +315,9 @@ function Panel({ label, color, focused, content, height, width, phaseColor, badg
     h(Text, { bold: focused, color: borderColor, wrap: 'truncate' },
       (focused ? '\u25B8 ' : '') + label + badgeText + activeIndicator
     ),
-    h(Text, { wrap: 'truncate' }, content)
+    ...contentLines.map((line, i) =>
+      h(Text, { key: String(i), wrap: 'truncate' }, line || ' ')
+    )
   );
 }
 
@@ -300,45 +339,9 @@ function ProgressBar({ current, total, width, phaseColor }) {
 }
 
 /**
- * Timeline component showing phase transitions as markers
- */
-function Timeline({ events, currentStep, width, phases }) {
-  const timelineWidth = Math.max(20, width - 4);
-  
-  if (events.length === 0) {
-    return chalk.gray('\u2500'.repeat(timelineWidth));
-  }
-  
-  const chars = new Array(timelineWidth).fill('\u2500');
-  const phaseMarkers = {
-    'SYNC_START': { char: '\u25CF', color: 'green' },
-    'SYNC_END': { char: '\u25CB', color: 'green' },
-    'CALLBACK_START': { char: '\u25AA', color: 'cyan' },
-    'DONE': { char: '\u2713', color: 'white' },
-  };
-  
-  // Mark phase transitions
-  events.forEach((evt, i) => {
-    const marker = phaseMarkers[evt.type];
-    if (marker) {
-      const pos = Math.min(timelineWidth - 1, Math.floor((i / events.length) * timelineWidth));
-      chars[pos] = chalk[marker.color](marker.char);
-    }
-  });
-  
-  // Mark current position
-  if (currentStep >= 0) {
-    const currentPos = Math.min(timelineWidth - 1, Math.floor((currentStep / events.length) * timelineWidth));
-    chars[currentPos] = chalk.bgWhite.black('\u25BC');
-  }
-  
-  return chars.join('');
-}
-
-/**
  * Help overlay component showing all keybindings and concepts
  */
-function HelpOverlay({ width, height, onClose }) {
+function HelpOverlay({ width, height }) {
   const helpContent = [
     '',
     chalk.bold.cyan('  EVENT LOOP VISUALIZER - HELP'),
@@ -388,17 +391,27 @@ function HelpOverlay({ width, height, onClose }) {
   const paddingTop = Math.floor((height - boxHeight) / 2);
   const paddingLeft = Math.floor((width - boxWidth) / 2);
 
+  const blankLines = new Array(height).fill(' '.repeat(width)).join('\n');
+
   return h(Box, {
     position: 'absolute',
-    marginLeft: paddingLeft,
-    marginTop: paddingTop,
-    width: boxWidth,
-    height: boxHeight,
-    borderStyle: 'double',
-    borderColor: 'cyan',
+    width: width,
+    height: height,
     flexDirection: 'column',
   },
-    h(Text, { wrap: 'truncate' }, helpContent.slice(0, boxHeight - 2).join('\n'))
+    h(Text, null, blankLines),
+    h(Box, {
+      position: 'absolute',
+      marginLeft: paddingLeft,
+      marginTop: paddingTop,
+      width: boxWidth,
+      height: boxHeight,
+      borderStyle: 'double',
+      borderColor: 'cyan',
+      flexDirection: 'column',
+    },
+      h(Text, { wrap: 'truncate' }, helpContent.slice(0, boxHeight - 2).join('\n'))
+    )
   );
 }
 
@@ -436,8 +449,9 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
   const [focusIndex, setFocusIndex] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
   
-  // Track recently changed variables for highlighting
-  const recentChangesRef = useRef(new Set());
+  // Track previous lengths for scroll-on-grow only
+  const prevLogLenRef = useRef(0);
+  const prevConsoleLenRef = useRef(0);
   const prevMemoryRef = useRef(new Map());
 
   // Prevent unused-variable warnings while keeping renderTick in scope
@@ -478,6 +492,7 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
     let startFrom = -1;
     stateRef.current = createInitialState();
     displayFileRef.current = sourcePath;
+    prevMemoryRef.current = new Map();
 
     for (const [snapStep] of snapshotsRef.current) {
       if (snapStep <= n && snapStep > startFrom) startFrom = snapStep;
@@ -525,6 +540,9 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
     currentStepRef.current = -1;
     displayFileRef.current = sourcePath;
     scrollOffsetsRef.current = new Array(PANEL_COUNT).fill(0);
+    prevLogLenRef.current = 0;
+    prevConsoleLenRef.current = 0;
+    prevMemoryRef.current = new Map();
     setRenderTick(t => t + 1);
   }
 
@@ -632,12 +650,12 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
   const footerHeight = 3;
   const mainHeight = rows - headerHeight - footerHeight;
 
-  const consoleHeight = Math.max(5, Math.round(rows * 0.15));
-  const memoryHeight = Math.max(5, Math.round(rows * 0.30));
-  const sourceHeight = Math.max(5, mainHeight - consoleHeight - memoryHeight);
-
   const callStackHeight = Math.max(4, Math.round(rows * 0.18) - 3);
   const queuesHeight = Math.max(4, Math.round(rows * 0.20));
+  const sourceHeight = Math.max(5, callStackHeight + queuesHeight);
+
+  const consoleHeight = Math.max(5, Math.round(rows * 0.15));
+  const memoryHeight = Math.max(5, mainHeight - sourceHeight - consoleHeight);
   const eventLogHeight = Math.max(5, mainHeight - callStackHeight - queuesHeight);
 
   // Inner content rows: panel height − 2 (border) − 1 (label line)
@@ -649,9 +667,17 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
   const macroContentH = Math.max(0, queuesHeight - 3);
   const eventLogContentH = Math.max(0, eventLogHeight - 3);
 
+  // Content widths for pre-truncation (ANSI codes inflate Yoga layout measurement)
+  const leftColWidth = Math.floor(cols / 2);
+  const rightColWidth = cols - leftColWidth;
+  const leftContentW = Math.max(0, leftColWidth - 2);
+  const rightContentW = Math.max(0, rightColWidth - 2);
+  const queueContentW = Math.max(0, Math.floor(rightColWidth / 2) - 2);
+
   // --- Build panel content ---
 
   const state = stateRef.current;
+  const phaseTheme = PHASE_COLORS[state.phase] || PHASE_COLORS['Ready'];
   const currentStep = currentStepRef.current;
   const evt = currentStep >= 0 ? events[currentStep] : null;
   const eventFile = evt && evt.file;
@@ -674,17 +700,15 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
     ? eventFile.split(/[\/\\]/).pop()
     : null;
 
-  let sourceLabel, sourceColor;
+  let sourceLabel;
   if (isExternal && displayFileRef.current === focusFile) {
-    sourceLabel = (displayFileName || 'Source') + ' \u2192 ' + (externalFileName || '?');
-    sourceColor = 'yellow';
+    sourceLabel = 'Source: ' + (displayFileName || '?') + ' \u2192 ' + (externalFileName || '?');
   } else if (isExternalFile) {
-    sourceLabel = '\u21AA ' + displayFileName;
-    sourceColor = 'gray';
+    sourceLabel = 'Source: \u21AA ' + displayFileName;
   } else {
-    sourceLabel = displayFileName || 'Source Code';
-    sourceColor = 'green';
+    sourceLabel = 'Source: ' + (displayFileName || 'untitled');
   }
+  const sourceColor = isExternalFile ? 'gray' : phaseTheme.primary;
 
   // Source lines with highlighting
   let sourceLines = [];
@@ -708,8 +732,6 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
       const highlightedLine = highlightSyntax(line || '');
       
       if (highlightLine === lineNum) {
-        // Currently executing line - use phase-aware highlighting
-        const phaseTheme = PHASE_COLORS[state.phase] || PHASE_COLORS['Ready'];
         return highlightExternal
           ? chalk.bgYellow.black(' ' + num + '  ' + (line || '') + ' ')
           : chalk.bgWhite.black.bold(' ' + num + '  ' + (line || '') + ' ');
@@ -725,24 +747,31 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
     scrollOffsetsRef.current[0] = Math.max(0, highlightLine - 1 - SCROLL_OFFSET_LINES);
   }
 
-  // Auto-scroll console and event log to bottom
-  if (state.console.length > consoleContentH) {
-    scrollOffsetsRef.current[1] = state.console.length - consoleContentH;
+  // Auto-scroll console and event log only when new entries are added
+  if (state.console.length > prevConsoleLenRef.current && state.console.length > consoleContentH) {
+    scrollOffsetsRef.current[2] = state.console.length - consoleContentH;
   }
-  if (state.log.length > eventLogContentH) {
+  prevConsoleLenRef.current = state.console.length;
+
+  if (state.log.length > prevLogLenRef.current && state.log.length > eventLogContentH) {
     scrollOffsetsRef.current[3] = state.log.length - eventLogContentH;
   }
+  prevLogLenRef.current = state.log.length;
 
-  function sliceContent(lines, panelIdx, contentH) {
+  function sliceContent(lines, panelIdx, contentH, contentW) {
     if (contentH <= 0) return '';
     const maxOffset = Math.max(0, lines.length - contentH);
     const offset = Math.min(scrollOffsetsRef.current[panelIdx], maxOffset);
     scrollOffsetsRef.current[panelIdx] = Math.max(0, offset);
-    return lines.slice(offset, offset + contentH).join('\n');
+    const sliced = lines.slice(offset, offset + contentH);
+    return (contentW > 0
+      ? sliced.map(l => truncateAnsi(l, contentW))
+      : sliced
+    ).join('\n');
   }
 
-  const sourceContent = sliceContent(sourceLines, 0, sourceContentH);
-  const consoleContent = sliceContent(state.console, 1, consoleContentH);
+  const sourceContent = sliceContent(sourceLines, 0, sourceContentH, leftContentW);
+  const consoleContent = sliceContent(state.console, 2, consoleContentH, leftContentW);
 
   // Detect recently changed variables
   const changedVars = new Set();
@@ -765,7 +794,7 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
         const valText = isChanged ? chalk.yellowBright(val) : val;
         return ' ' + typeIcon + ' ' + nameText + ' = ' + valText;
       });
-  const memoryContent = sliceContent(memoryLines, 2, memoryContentH);
+  const memoryContent = sliceContent(memoryLines, 1, memoryContentH, leftContentW);
   
   // Helper to get type icon for values
   function getTypeIcon(val) {
@@ -779,7 +808,7 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
     return chalk.gray('\u2022');
   }
 
-  const eventLogContent = sliceContent(state.log, 3, eventLogContentH);
+  const eventLogContent = sliceContent(state.log, 3, eventLogContentH, rightContentW);
 
   // Enhanced call stack with visual depth indicators
   const callStackLines = state.callStack.length === 0
@@ -791,7 +820,7 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
         const text = isTop ? chalk.bold.white(s) : chalk.gray(s);
         return ' ' + indent + prefix + ' ' + text;
       });
-  const callStackContent = sliceContent(callStackLines, 4, callStackContentH);
+  const callStackContent = sliceContent(callStackLines, 4, callStackContentH, rightContentW);
 
   // Enhanced queue display with source badges
   const getTaskBadge = (label) => {
@@ -811,7 +840,7 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
         const text = isFirst ? chalk.bold.cyanBright(item.label) : item.label;
         return ' ' + badge + ' ' + (i + 1) + '. ' + text;
       });
-  const microContent = sliceContent(microLines, 5, microContentH);
+  const microContent = sliceContent(microLines, 5, microContentH, queueContentW);
 
   const macroLines = state.macroQueue.length === 0
     ? [chalk.gray('(empty)')]
@@ -821,10 +850,8 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
         const text = isFirst ? chalk.bold.yellowBright(item.label) : item.label;
         return ' ' + badge + ' ' + (i + 1) + '. ' + text;
       });
-  const macroContent = sliceContent(macroLines, 6, macroContentH);
+  const macroContent = sliceContent(macroLines, 6, macroContentH, queueContentW);
 
-  // Phase-based theming
-  const phaseTheme = PHASE_COLORS[state.phase] || PHASE_COLORS['Ready'];
   const phaseColorFn = chalk[phaseTheme.primary] || chalk.white;
   const phaseAccentFn = chalk[phaseTheme.accent] || chalk.white;
 
@@ -881,11 +908,11 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
       h(Box, { flexDirection: 'column', width: '50%' },
         h(Panel, { label: sourceLabel, color: sourceColor, focused: focusIndex === 0,
           content: sourceContent, height: sourceHeight, phaseColor: phaseTheme.primary }),
-        h(Panel, { label: 'Console Output', color: 'yellow', focused: focusIndex === 1,
-          content: consoleContent, height: consoleHeight }),
-        h(Panel, { label: 'Memory', color: 'magenta', focused: focusIndex === 2,
+        h(Panel, { label: 'Memory', color: 'magenta', focused: focusIndex === 1,
           content: memoryContent, height: memoryHeight, 
           badge: state.memory.size > 0 ? { text: String(state.memory.size), color: 'magenta' } : null }),
+        h(Panel, { label: 'Console Output', color: 'yellow', focused: focusIndex === 2,
+          content: consoleContent, height: consoleHeight }),
       ),
 
       h(Box, { flexDirection: 'column', width: '50%' },
@@ -911,7 +938,7 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
     ),
 
     // Help overlay (rendered on top when active)
-    showHelp && h(HelpOverlay, { width: cols, height: rows, onClose: () => setShowHelp(false) }),
+    showHelp && h(HelpOverlay, { width: cols, height: rows }),
   );
 }
 
