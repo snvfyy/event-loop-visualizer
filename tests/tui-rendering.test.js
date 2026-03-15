@@ -224,6 +224,35 @@ describe('panel contents update as events are applied', () => {
   });
 });
 
+describe('memory highlight on backward navigation', () => {
+  afterEach(() => { cleanup(); });
+
+  it('stepping back does not falsely highlight all memory variables as changed', async () => {
+    const { lastFrame, stdin } = await renderAndWait();
+
+    // Step to event 10 (MEMORY result = "data") — variable appears, highlighted as new
+    await stepForward(stdin, 11);
+    // Step one more (event 11: LOG) — variable still present, no longer "new"
+    await stepForward(stdin, 1);
+
+    const afterForward = lastFrame() ?? '';
+    expect(stripAnsi(afterForward)).toContain('result = "data"');
+
+    stdin.write(KEY_LEFT);
+    await sleep(100);
+
+    const afterBack = lastFrame() ?? '';
+    expect(stripAnsi(afterBack)).toContain('result = "data"');
+
+    const bgYellow = '\x1b[43m';
+    // Check only lines that display the memory variable.
+    const memoryLines = afterBack.split('\n').filter(l => stripAnsi(l).includes('result ='));
+    for (const line of memoryLines) {
+      expect(line).not.toContain(bgYellow);
+    }
+  });
+});
+
 describe('macrotask lifecycle', () => {
   afterEach(() => { cleanup(); });
 

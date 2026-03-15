@@ -24,58 +24,54 @@ const PHASE_COLORS = {
   'Complete': { primary: 'gray', accent: 'white' },
 };
 
-// JavaScript syntax highlighting keywords
-const JS_KEYWORDS = [
+// Pre-compiled sets for O(1) keyword/builtin lookup
+const JS_KEYWORDS = new Set([
   'async', 'await', 'function', 'const', 'let', 'var', 'return', 'if', 'else',
   'for', 'while', 'do', 'switch', 'case', 'break', 'continue', 'try', 'catch',
   'finally', 'throw', 'new', 'class', 'extends', 'import', 'export', 'default',
   'from', 'of', 'in', 'typeof', 'instanceof', 'this', 'super', 'null', 'undefined',
   'true', 'false', 'void', 'delete', 'yield', 'static', 'get', 'set',
-];
+]);
 
-const JS_BUILTINS = [
+const JS_BUILTINS = new Set([
   'Promise', 'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval',
   'setImmediate', 'queueMicrotask', 'console', 'process', 'JSON', 'Math',
   'Object', 'Array', 'String', 'Number', 'Boolean', 'Date', 'Error', 'Map', 'Set',
   'WeakMap', 'WeakSet', 'Symbol', 'BigInt', 'Proxy', 'Reflect', 'Intl', 'fetch',
-];
+]);
+
+// Pre-compiled tokenizer: matches strings, comments, numbers, identifiers, arrows, or single chars.
+// Order matters -- strings and comments are matched first so their contents aren't tokenized.
+const TOKEN_RE = /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|\/\/.*$|\/\*[\s\S]*?\*\/|\b\d+\.?\d*\b|=>|\b[a-zA-Z_$][\w$]*\b|./g;
 
 /**
- * Apply syntax highlighting to a line of JavaScript code
+ * Apply syntax highlighting to a line of JavaScript code.
+ * Tokenizes first, then colors each token -- avoids double-styling bugs
+ * (e.g. keywords inside strings) and eliminates per-call RegExp allocations.
  * @param {string} line
  * @returns {string}
  */
 function highlightSyntax(line) {
   if (!line) return line;
-  
-  let result = line;
-  
-  // Highlight strings (single and double quotes, backticks)
-  result = result.replace(/(["'`])(?:(?!\1)[^\\]|\\.)*?\1/g, match => chalk.yellow(match));
-  
-  // Highlight comments
-  result = result.replace(/(\/\/.*$)/gm, match => chalk.gray.italic(match));
-  result = result.replace(/(\/\*[\s\S]*?\*\/)/g, match => chalk.gray.italic(match));
-  
-  // Highlight numbers
-  result = result.replace(/\b(\d+\.?\d*)\b/g, match => chalk.magenta(match));
-  
-  // Highlight keywords
-  for (const kw of JS_KEYWORDS) {
-    const regex = new RegExp(`\\b(${kw})\\b`, 'g');
-    result = result.replace(regex, chalk.red(kw));
-  }
-  
-  // Highlight builtins
-  for (const builtin of JS_BUILTINS) {
-    const regex = new RegExp(`\\b(${builtin})\\b`, 'g');
-    result = result.replace(regex, chalk.cyan(builtin));
-  }
-  
-  // Highlight arrow functions
-  result = result.replace(/(=>)/g, chalk.red('=>'));
-  
-  return result;
+
+  return line.replace(TOKEN_RE, (tok) => {
+    const ch = tok.charCodeAt(0);
+    // Strings
+    if (ch === 0x22 || ch === 0x27 || ch === 0x60) return chalk.yellow(tok);
+    // Comments
+    if (ch === 0x2F && tok.length > 1 && (tok.charCodeAt(1) === 0x2F || tok.charCodeAt(1) === 0x2A))
+      return chalk.gray.italic(tok);
+    // Arrow function
+    if (tok === '=>') return chalk.red(tok);
+    // Numbers
+    if (ch >= 0x30 && ch <= 0x39) return chalk.magenta(tok);
+    // Identifiers: keywords vs builtins vs plain
+    if ((ch >= 0x41 && ch <= 0x5A) || (ch >= 0x61 && ch <= 0x7A) || ch === 0x5F || ch === 0x24) {
+      if (JS_KEYWORDS.has(tok)) return chalk.red(tok);
+      if (JS_BUILTINS.has(tok)) return chalk.cyan(tok);
+    }
+    return tok;
+  });
 }
 
 /**
@@ -297,12 +293,11 @@ function cloneState(s) {
 // React components (using createElement instead of JSX to avoid a build step)
 // ---------------------------------------------------------------------------
 
-function Panel({ label, color, focused, content, height, width, phaseColor, badge, isActive }) {
+function Panel({ label, color, focused, lines, height, width, phaseColor, badge, isActive }) {
   const borderColor = focused ? 'white' : color;
   const borderStyle = focused ? 'double' : 'single';
   const activeIndicator = isActive ? chalk.bold[phaseColor || 'green'](' *') : '';
   const badgeText = badge ? chalk[badge.color || 'gray'](' [' + badge.text + ']') : '';
-  const contentLines = content ? content.split('\n') : [];
   
   return h(Box, {
     borderStyle,
@@ -315,16 +310,46 @@ function Panel({ label, color, focused, content, height, width, phaseColor, badg
     h(Text, { bold: focused, color: borderColor, wrap: 'truncate' },
       (focused ? '\u25B8 ' : '') + label + badgeText + activeIndicator
     ),
-    ...contentLines.map((line, i) =>
+    ...(lines || []).map((line, i) =>
       h(Text, { key: String(i), wrap: 'truncate' }, line || ' ')
     )
   );
 }
 
+function getTypeIcon(val) {
+  if (val === 'undefined' || val === 'null') return chalk.gray('\u2205');
+  if (val === 'true' || val === 'false') return chalk.blue('\u25C6');
+  if (!isNaN(Number(val))) return chalk.magenta('#');
+  if (val.startsWith('"') || val.startsWith("'") || val.startsWith('`')) return chalk.yellow('\u201C');
+  if (val.startsWith('[')) return chalk.cyan('\u2395');
+  if (val.startsWith('{')) return chalk.green('\u2687');
+  if (val.startsWith('function') || val.includes('=>')) return chalk.red('\u0192');
+  return chalk.gray('\u2022');
+}
+
+function getTaskBadge(label) {
+  if (label.includes('Promise') || label.includes('then') || label.includes('await')) return chalk.cyan('\u25CF');
+  if (label.includes('setTimeout')) return chalk.yellow('\u25D4');
+  if (label.includes('setInterval')) return chalk.yellow('\u25D1');
+  if (label.includes('queueMicrotask')) return chalk.cyan('\u25CB');
+  if (label.includes('nextTick')) return chalk.magenta('\u25C8');
+  return chalk.gray('\u25AA');
+}
+
+function sliceContent(lines, panelIdx, contentH, contentW, scrollOffsetsRef) {
+  if (contentH <= 0) return [];
+  const maxOffset = Math.max(0, lines.length - contentH);
+  const offset = Math.min(scrollOffsetsRef.current[panelIdx], maxOffset);
+  scrollOffsetsRef.current[panelIdx] = Math.max(0, offset);
+  const sliced = lines.slice(offset, offset + contentH);
+  return contentW > 0 ? sliced.map(l => truncateAnsi(l, contentW)) : sliced;
+}
+
 /**
- * Progress bar component showing current position in the event stream
+ * Render a text-based progress bar showing current position in the event stream.
+ * Returns a plain string (not a React element).
  */
-function ProgressBar({ current, total, width, phaseColor }) {
+function renderProgressBar({ current, total, width, phaseColor }) {
   const barWidth = Math.max(10, width - 12);
   const progress = total > 0 ? Math.min(1, Math.max(0, (current + 1) / total)) : 0;
   const filled = Math.round(progress * barWidth);
@@ -488,11 +513,16 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
 
   // --- Navigation ---
 
+  function saveSnapshot(step) {
+    if ((step + 1) % SNAPSHOT_INTERVAL === 0 && !snapshotsRef.current.has(step)) {
+      snapshotsRef.current.set(step, cloneState(stateRef.current));
+    }
+  }
+
   function goToStep(n) {
     let startFrom = -1;
     stateRef.current = createInitialState();
     displayFileRef.current = sourcePath;
-    prevMemoryRef.current = new Map();
 
     for (const [snapStep] of snapshotsRef.current) {
       if (snapStep <= n && snapStep > startFrom) startFrom = snapStep;
@@ -508,10 +538,11 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
     for (let i = currentStepRef.current + 1; i <= n && i < totalSteps; i++) {
       applyEvent(stateRef.current, events[i]);
       currentStepRef.current = i;
-      if ((i + 1) % SNAPSHOT_INTERVAL === 0 && !snapshotsRef.current.has(i)) {
-        snapshotsRef.current.set(i, cloneState(stateRef.current));
-      }
+      saveSnapshot(i);
     }
+    // Match prev memory to the replayed state so backward navigation
+    // doesn't falsely highlight every variable as "changed".
+    prevMemoryRef.current = new Map(stateRef.current.memory);
     setRenderTick(t => t + 1);
   }
 
@@ -522,10 +553,7 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
     }
     currentStepRef.current++;
     applyEvent(stateRef.current, events[currentStepRef.current]);
-    if ((currentStepRef.current + 1) % SNAPSHOT_INTERVAL === 0
-      && !snapshotsRef.current.has(currentStepRef.current)) {
-      snapshotsRef.current.set(currentStepRef.current, cloneState(stateRef.current));
-    }
+    saveSnapshot(currentStepRef.current);
     setRenderTick(t => t + 1);
   }
 
@@ -630,12 +658,10 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
       return;
     }
     if (input === '=' || input === '+') {
-      setPlaying(false);
       setSpeed(s => Math.max(MIN_PLAY_SPEED_MS, s - SPEED_STEP_MS));
       return;
     }
     if (input === '-' || input === '_') {
-      setPlaying(false);
       setSpeed(s => Math.min(MAX_PLAY_SPEED_MS, s + SPEED_STEP_MS));
       return;
     }
@@ -684,7 +710,8 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
   const isExternal = evt && evt.external;
   const eventFocusLine = evt && evt.focusLine;
 
-  // Multi-file navigation
+  // Multi-file navigation -- displayFileRef is read immediately below (displayLines),
+  // so it must be updated during render rather than in useEffect.
   if (focusFile && isExternal) {
     displayFileRef.current = focusFile;
   } else if (eventFile && !pathsMatch(eventFile, displayFileRef.current || '')) {
@@ -710,11 +737,10 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
   }
   const sourceColor = isExternalFile ? 'gray' : phaseTheme.primary;
 
-  // Source lines with highlighting
-  let sourceLines = [];
+  // Determine which source line should be highlighted (current execution position)
   let highlightLine = null;
+  let highlightExternal = false;
   if (displayLines) {
-    let highlightExternal = false;
     if (isExternal && displayFileRef.current === focusFile) {
       highlightLine = eventFocusLine || null;
       highlightExternal = true;
@@ -724,22 +750,6 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
     ) {
       highlightLine = evt.line;
     }
-
-    const padWidth = String(displayLines.length).length;
-    sourceLines = displayLines.map((line, i) => {
-      const lineNum = i + 1;
-      const num = String(lineNum).padStart(Math.max(3, padWidth), ' ');
-      const highlightedLine = highlightSyntax(line || '');
-      
-      if (highlightLine === lineNum) {
-        return highlightExternal
-          ? chalk.bgYellow.black(' ' + num + '  ' + (line || '') + ' ')
-          : chalk.bgWhite.black.bold(' ' + num + '  ' + (line || '') + ' ');
-      }
-      return chalk.gray(num) + '  ' + highlightedLine;
-    });
-  } else {
-    sourceLines = [chalk.gray('[Command mode \u2014 source not available]')];
   }
 
   // Auto-scroll source to highlighted line
@@ -747,41 +757,59 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
     scrollOffsetsRef.current[0] = Math.max(0, highlightLine - 1 - SCROLL_OFFSET_LINES);
   }
 
-  // Auto-scroll console and event log only when new entries are added
+  // Build visible source lines (syntax highlighting only on the visible slice)
+  let sourceContent;
+  if (displayLines) {
+    const padWidth = String(displayLines.length).length;
+    const maxOffset = Math.max(0, displayLines.length - sourceContentH);
+    const offset = Math.min(scrollOffsetsRef.current[0], maxOffset);
+    scrollOffsetsRef.current[0] = Math.max(0, offset);
+    const visibleEnd = Math.min(offset + sourceContentH, displayLines.length);
+
+    sourceContent = [];
+    for (let i = offset; i < visibleEnd; i++) {
+      const lineNum = i + 1;
+      const num = String(lineNum).padStart(Math.max(3, padWidth), ' ');
+      const line = displayLines[i] || '';
+
+      let formatted;
+      if (highlightLine === lineNum) {
+        formatted = highlightExternal
+          ? chalk.bgYellow.black(' ' + num + '  ' + line + ' ')
+          : chalk.bgWhite.black.bold(' ' + num + '  ' + line + ' ');
+      } else {
+        formatted = chalk.gray(num) + '  ' + highlightSyntax(line);
+      }
+      sourceContent.push(leftContentW > 0 ? truncateAnsi(formatted, leftContentW) : formatted);
+    }
+  } else {
+    sourceContent = [chalk.gray('[Command mode \u2014 source not available]')];
+  }
+
+  // Auto-scroll console and event log when new entries are added.
+  // Scroll offset mutations stay in render because sliceContent reads them immediately.
   if (state.console.length > prevConsoleLenRef.current && state.console.length > consoleContentH) {
     scrollOffsetsRef.current[2] = state.console.length - consoleContentH;
   }
-  prevConsoleLenRef.current = state.console.length;
 
   if (state.log.length > prevLogLenRef.current && state.log.length > eventLogContentH) {
     scrollOffsetsRef.current[3] = state.log.length - eventLogContentH;
   }
-  prevLogLenRef.current = state.log.length;
 
-  function sliceContent(lines, panelIdx, contentH, contentW) {
-    if (contentH <= 0) return '';
-    const maxOffset = Math.max(0, lines.length - contentH);
-    const offset = Math.min(scrollOffsetsRef.current[panelIdx], maxOffset);
-    scrollOffsetsRef.current[panelIdx] = Math.max(0, offset);
-    const sliced = lines.slice(offset, offset + contentH);
-    return (contentW > 0
-      ? sliced.map(l => truncateAnsi(l, contentW))
-      : sliced
-    ).join('\n');
-  }
+  const consoleContent = sliceContent(state.console, 2, consoleContentH, leftContentW, scrollOffsetsRef);
 
-  const sourceContent = sliceContent(sourceLines, 0, sourceContentH, leftContentW);
-  const consoleContent = sliceContent(state.console, 2, consoleContentH, leftContentW);
-
-  // Detect recently changed variables
+  // Detect recently changed variables (compare against previous render's snapshot)
   const changedVars = new Set();
   for (const [name, val] of state.memory) {
     if (!prevMemoryRef.current.has(name) || prevMemoryRef.current.get(name) !== val) {
       changedVars.add(name);
     }
   }
-  // Update previous memory state
-  prevMemoryRef.current = new Map(state.memory);
+
+  // Capture values for deferred ref updates (applied in useEffect below)
+  const consoleLen = state.console.length;
+  const logLen = state.log.length;
+  const memorySnapshot = new Map(state.memory);
 
   const memoryLines = state.memory.size === 0
     ? [chalk.gray('(no variables tracked)')]
@@ -794,21 +822,9 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
         const valText = isChanged ? chalk.yellowBright(val) : val;
         return ' ' + typeIcon + ' ' + nameText + ' = ' + valText;
       });
-  const memoryContent = sliceContent(memoryLines, 1, memoryContentH, leftContentW);
-  
-  // Helper to get type icon for values
-  function getTypeIcon(val) {
-    if (val === 'undefined' || val === 'null') return chalk.gray('\u2205');
-    if (val === 'true' || val === 'false') return chalk.blue('\u25C6');
-    if (!isNaN(Number(val))) return chalk.magenta('#');
-    if (val.startsWith('"') || val.startsWith("'") || val.startsWith('`')) return chalk.yellow('\u201C');
-    if (val.startsWith('[')) return chalk.cyan('\u2395');
-    if (val.startsWith('{')) return chalk.green('\u2687');
-    if (val.startsWith('function') || val.includes('=>')) return chalk.red('\u0192');
-    return chalk.gray('\u2022');
-  }
+  const memoryContent = sliceContent(memoryLines, 1, memoryContentH, leftContentW, scrollOffsetsRef);
 
-  const eventLogContent = sliceContent(state.log, 3, eventLogContentH, rightContentW);
+  const eventLogContent = sliceContent(state.log, 3, eventLogContentH, rightContentW, scrollOffsetsRef);
 
   // Enhanced call stack with visual depth indicators
   const callStackLines = state.callStack.length === 0
@@ -820,17 +836,7 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
         const text = isTop ? chalk.bold.white(s) : chalk.gray(s);
         return ' ' + indent + prefix + ' ' + text;
       });
-  const callStackContent = sliceContent(callStackLines, 4, callStackContentH, rightContentW);
-
-  // Enhanced queue display with source badges
-  const getTaskBadge = (label) => {
-    if (label.includes('Promise') || label.includes('then') || label.includes('await')) return chalk.cyan('\u25CF');
-    if (label.includes('setTimeout')) return chalk.yellow('\u25D4');
-    if (label.includes('setInterval')) return chalk.yellow('\u25D1');
-    if (label.includes('queueMicrotask')) return chalk.cyan('\u25CB');
-    if (label.includes('nextTick')) return chalk.magenta('\u25C8');
-    return chalk.gray('\u25AA');
-  };
+  const callStackContent = sliceContent(callStackLines, 4, callStackContentH, rightContentW, scrollOffsetsRef);
 
   const microLines = state.microQueue.length === 0
     ? [chalk.gray('(empty)')]
@@ -840,7 +846,7 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
         const text = isFirst ? chalk.bold.cyanBright(item.label) : item.label;
         return ' ' + badge + ' ' + (i + 1) + '. ' + text;
       });
-  const microContent = sliceContent(microLines, 5, microContentH, queueContentW);
+  const microContent = sliceContent(microLines, 5, microContentH, queueContentW, scrollOffsetsRef);
 
   const macroLines = state.macroQueue.length === 0
     ? [chalk.gray('(empty)')]
@@ -850,7 +856,7 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
         const text = isFirst ? chalk.bold.yellowBright(item.label) : item.label;
         return ' ' + badge + ' ' + (i + 1) + '. ' + text;
       });
-  const macroContent = sliceContent(macroLines, 6, macroContentH, queueContentW);
+  const macroContent = sliceContent(macroLines, 6, macroContentH, queueContentW, scrollOffsetsRef);
 
   const phaseColorFn = chalk[phaseTheme.primary] || chalk.white;
   const phaseAccentFn = chalk[phaseTheme.accent] || chalk.white;
@@ -879,7 +885,7 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
 
   // Progress bar for timeline
   const progressBarWidth = Math.floor(cols / 3);
-  const progressBar = ProgressBar({ current: currentStep, total: totalSteps, width: progressBarWidth, phaseColor: phaseTheme.primary });
+  const progressBar = renderProgressBar({ current: currentStep, total: totalSteps, width: progressBarWidth, phaseColor: phaseTheme.primary });
 
   const testHint = hasTests ? '  ' + chalk.bold('n/N') + ' Test' : '';
   const footerText =
@@ -891,6 +897,14 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
     chalk.bold('+/-') + ' Speed  ' +
     chalk.bold('r') + ' Reset  ' +
     chalk.bold('?') + ' Help' + testHint + '  ' + chalk.bold('q') + ' Quit';
+
+  // Sync "previous" tracking refs after render so they reflect this render's state.
+  // These are only read on the next render cycle for change detection / auto-scroll.
+  useEffect(() => {
+    prevConsoleLenRef.current = consoleLen;
+    prevLogLenRef.current = logLen;
+    prevMemoryRef.current = memorySnapshot;
+  });
 
   // --- Render tree ---
 
@@ -907,28 +921,28 @@ function App({ events, sourceCode, sourcePath, focusFile }) {
     h(Box, { flexDirection: 'row', height: mainHeight },
       h(Box, { flexDirection: 'column', width: '50%' },
         h(Panel, { label: sourceLabel, color: sourceColor, focused: focusIndex === 0,
-          content: sourceContent, height: sourceHeight, phaseColor: phaseTheme.primary }),
+          lines: sourceContent, height: sourceHeight, phaseColor: phaseTheme.primary }),
         h(Panel, { label: 'Memory', color: 'magenta', focused: focusIndex === 1,
-          content: memoryContent, height: memoryHeight, 
+          lines: memoryContent, height: memoryHeight, 
           badge: state.memory.size > 0 ? { text: String(state.memory.size), color: 'magenta' } : null }),
         h(Panel, { label: 'Console Output', color: 'yellow', focused: focusIndex === 2,
-          content: consoleContent, height: consoleHeight }),
+          lines: consoleContent, height: consoleHeight }),
       ),
 
       h(Box, { flexDirection: 'column', width: '50%' },
         h(Panel, { label: 'Call Stack', color: 'red', focused: focusIndex === 4,
-          content: callStackContent, height: callStackHeight, isActive: isStackActive,
+          lines: callStackContent, height: callStackHeight, isActive: isStackActive,
           badge: state.callStack.length > 0 ? { text: String(state.callStack.length), color: 'red' } : null }),
         h(Box, { flexDirection: 'row', height: queuesHeight },
           h(Panel, { label: 'Microtask Queue', color: 'cyan', focused: focusIndex === 5,
-            content: microContent, width: '50%', height: queuesHeight, isActive: isMicroActive,
+            lines: microContent, width: '50%', height: queuesHeight, isActive: isMicroActive,
             badge: state.microQueue.length > 0 ? { text: String(state.microQueue.length), color: 'cyan' } : null }),
           h(Panel, { label: 'Macrotask Queue', color: 'yellow', focused: focusIndex === 6,
-            content: macroContent, width: '50%', height: queuesHeight, isActive: isMacroActive,
+            lines: macroContent, width: '50%', height: queuesHeight, isActive: isMacroActive,
             badge: state.macroQueue.length > 0 ? { text: String(state.macroQueue.length), color: 'yellow' } : null }),
         ),
         h(Panel, { label: 'Event Log', color: 'blue', focused: focusIndex === 3,
-          content: eventLogContent, height: eventLogHeight,
+          lines: eventLogContent, height: eventLogHeight,
           badge: state.log.length > 0 ? { text: String(state.log.length), color: 'blue' } : null }),
       ),
     ),
