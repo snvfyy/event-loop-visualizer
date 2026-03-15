@@ -985,4 +985,4 @@ function startTUI(events, sourceCode, sourcePath, focusFile) {
   });
 }
 
-export { startTUI, applyEvent, createInitialState, pathsMatch };
+export { startTUI, applyEvent, createInitialState, pathsMatch, App };
